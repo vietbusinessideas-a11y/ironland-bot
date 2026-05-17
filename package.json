@@ -1,0 +1,19 @@
+{
+  "name": "ironland-messenger-bot",
+  "version": "1.0.0",
+  "description": "Chatbot tư vấn khóa học Iron Land qua Facebook Messenger",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
