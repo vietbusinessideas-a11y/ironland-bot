@@ -132,7 +132,7 @@ async function appendToSheet(lead, fbUserId) {
     const time = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
     await sheets.spreadsheets.values.append({
       spreadsheetId: CONFIG.SPREADSHEET_ID,
-      range: "Sheet1!A:E",
+      range: "Trang tính1!A:E",
       valueInputOption: "USER_ENTERED",
       resource: {
         values: [[time, lead.name, lead.phone, lead.course, fbUserId]],
