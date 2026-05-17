@@ -7,6 +7,8 @@ const CONFIG = {
   VERIFY_TOKEN: process.env.VERIFY_TOKEN || "ironland2024",
   PAGE_ACCESS_TOKEN: process.env.PAGE_ACCESS_TOKEN,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
   PORT: process.env.PORT || 3000,
 };
 
@@ -43,81 +45,108 @@ HƯỚNG DẪN TƯ VẤN:
 - Trả lời bằng tiếng Việt, thân thiện, ngắn gọn (tối đa 3-4 câu)
 - Hỏi thêm nhu cầu để tư vấn khóa học phù hợp nhất
 - Báo rõ học phí khi được hỏi
-- Khi khách muốn đăng ký: đề nghị để lại số điện thoại để nhân viên liên hệ
+- Khi khách muốn đăng ký: đề nghị để lại số điện thoại và tên để nhân viên liên hệ
 - Không bịa thêm thông tin ngoài dữ liệu đã cung cấp
 - Khóa nâng cao cần tư vấn thêm, mời khách để lại SĐT
-- Dùng emoji vừa phải cho thân thiện`;
+- Dùng emoji vừa phải cho thân thiện
+
+QUAN TRỌNG - PHÁT HIỆN SĐT:
+Khi khách nhắn tin có chứa số điện thoại (dãy số 10 chữ số bắt đầu bằng 0, hoặc +84), hãy:
+1. Cảm ơn khách và xác nhận đã nhận thông tin
+2. Hứa nhân viên sẽ liên hệ trong thời gian sớm nhất
+3. Thêm dòng cuối CHÍNH XÁC theo định dạng này (không thay đổi):
+[LEAD:SĐT={số điện thoại},TÊN={tên nếu có, nếu không có ghi "Chưa cung cấp"},KHÓA={khóa học quan tâm nếu biết, nếu không ghi "Chưa xác định"}]`;
 
 // ===================== LƯU LỊCH SỬ HỘI THOẠI =====================
-// Gemini dùng format: { role: "user"/"model", parts: [{ text }] }
 const conversationHistory = new Map();
 
 function getHistory(userId) {
-  if (!conversationHistory.has(userId)) {
-    conversationHistory.set(userId, []);
-  }
+  if (!conversationHistory.has(userId)) conversationHistory.set(userId, []);
   return conversationHistory.get(userId);
 }
 
 function addToHistory(userId, role, text) {
   const history = getHistory(userId);
   history.push({ role, parts: [{ text }] });
-  // Giữ tối đa 20 tin nhắn gần nhất
   if (history.length > 20) history.splice(0, 2);
+}
+
+// ===================== PHÁT HIỆN LEAD =====================
+function extractLead(text) {
+  const match = text.match(/\[LEAD:SĐT=([^,\]]+),TÊN=([^,\]]+),KHÓA=([^\]]+)\]/);
+  if (!match) return null;
+  return { phone: match[1].trim(), name: match[2].trim(), course: match[3].trim() };
+}
+
+function cleanReply(text) {
+  return text.replace(/\[LEAD:[^\]]+\]/g, "").trim();
+}
+
+// ===================== GỬI TELEGRAM =====================
+async function sendTelegram(lead, fbUserId) {
+  if (!CONFIG.TELEGRAM_BOT_TOKEN || !CONFIG.TELEGRAM_CHAT_ID) {
+    console.log("⚠️  Telegram chưa cấu hình, bỏ qua");
+    return;
+  }
+  const time = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+  const msg =
+    `🔔 *KHÁCH HÀNG MỚI - IRON LAND*\n\n` +
+    `📞 SĐT: *${lead.phone}*\n` +
+    `👤 Tên: ${lead.name}\n` +
+    `📚 Khóa quan tâm: ${lead.course}\n` +
+    `🕐 Thời gian: ${time}\n` +
+    `🆔 Facebook ID: \`${fbUserId}\``;
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: CONFIG.TELEGRAM_CHAT_ID,
+          text: msg,
+          parse_mode: "Markdown",
+        }),
+      }
+    );
+    const json = await res.json();
+    if (json.ok) console.log("✅ Telegram sent");
+    else console.error("❌ Telegram error:", json.description);
+  } catch (err) {
+    console.error("❌ Telegram error:", err.message);
+  }
 }
 
 // ===================== GỌI GEMINI API =====================
 async function askGemini(userId, userMessage) {
   addToHistory(userId, "user", userMessage);
-
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
-
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      system_instruction: {
-        parts: [{ text: SYSTEM_PROMPT }],
-      },
+      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: getHistory(userId),
-      generationConfig: {
-        maxOutputTokens: 500,
-        temperature: 0.7,
-      },
+      generationConfig: { maxOutputTokens: 500, temperature: 0.7 },
     }),
   });
-
   const data = await response.json();
-
-  // Xử lý lỗi từ Gemini
-  if (data.error) {
-    console.error("Gemini error:", data.error);
-    throw new Error(data.error.message);
-  }
-
-  const reply =
-    data.candidates?.[0]?.content?.parts?.[0]?.text ||
-    "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.";
-
-  addToHistory(userId, "model", reply);
-  return reply;
+  if (data.error) { console.error("Gemini error:", data.error); throw new Error(data.error.message); }
+  const rawReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.";
+  addToHistory(userId, "model", rawReply);
+  return rawReply;
 }
 
 // ===================== GỬI TIN MESSENGER =====================
 async function sendMessage(recipientId, text) {
-  // Facebook giới hạn 2000 ký tự/tin nhắn
   const chunks = text.match(/.{1,1900}(\s|$)/gs) || [text];
-
   for (const chunk of chunks) {
     const res = await fetch(
       `https://graph.facebook.com/v18.0/me/messages?access_token=${CONFIG.PAGE_ACCESS_TOKEN}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipient: { id: recipientId },
-          message: { text: chunk.trim() },
-        }),
+        body: JSON.stringify({ recipient: { id: recipientId }, message: { text: chunk.trim() } }),
       }
     );
     const json = await res.json();
@@ -125,59 +154,43 @@ async function sendMessage(recipientId, text) {
   }
 }
 
-// ===================== WEBHOOK ROUTES =====================
-
-// Xác thực webhook với Facebook
+// ===================== WEBHOOK =====================
 app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
+  const { "hub.mode": mode, "hub.verify_token": token, "hub.challenge": challenge } = req.query;
   if (mode === "subscribe" && token === CONFIG.VERIFY_TOKEN) {
     console.log("✅ Webhook verified!");
     res.status(200).send(challenge);
   } else {
-    console.warn("❌ Webhook verification failed");
     res.sendStatus(403);
   }
 });
 
-// Nhận tin nhắn từ Facebook
 app.post("/webhook", async (req, res) => {
   const body = req.body;
   if (body.object !== "page") return res.sendStatus(404);
-
-  res.sendStatus(200); // Phải trả 200 ngay để Facebook không retry
+  res.sendStatus(200);
 
   for (const entry of body.entry || []) {
     for (const event of entry.messaging || []) {
-      if (!event.message?.text) continue; // Bỏ qua sticker, file, reaction
-
+      if (!event.message?.text) continue;
       const senderId = event.sender.id;
       const messageText = event.message.text;
-
       console.log(`📨 [${senderId}]: ${messageText}`);
-
       try {
-        const reply = await askGemini(senderId, messageText);
-        await sendMessage(senderId, reply);
-        console.log(`✉️  Reply sent to ${senderId}`);
+        const rawReply = await askGemini(senderId, messageText);
+        const lead = extractLead(rawReply);
+        if (lead) {
+          console.log(`🎯 Lead detected:`, lead);
+          await sendTelegram(lead, senderId);
+        }
+        await sendMessage(senderId, cleanReply(rawReply));
       } catch (err) {
         console.error("❌ Error:", err.message);
-        await sendMessage(
-          senderId,
-          "Xin lỗi, hệ thống đang bận. Vui lòng thử lại sau ít phút nhé! 🙏"
-        );
+        await sendMessage(senderId, "Xin lỗi, hệ thống đang bận. Vui lòng thử lại sau ít phút nhé! 🙏");
       }
     }
   }
 });
 
-// Health check
-app.get("/", (req, res) =>
-  res.send("🚀 Iron Land Bot (Gemini) đang chạy ✅")
-);
-
-app.listen(CONFIG.PORT, () => {
-  console.log(`🚀 Iron Land Bot chạy tại port ${CONFIG.PORT}`);
-});
+app.get("/", (req, res) => res.send("🚀 Iron Land Bot (Gemini + Telegram) đang chạy ✅"));
+app.listen(CONFIG.PORT, () => console.log(`🚀 Iron Land Bot chạy tại port ${CONFIG.PORT}`));
