@@ -1,4 +1,5 @@
 const express = require("express");
+const { google } = require("googleapis");
 const app = express();
 app.use(express.json());
 
@@ -9,6 +10,9 @@ const CONFIG = {
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
+  SPREADSHEET_ID: process.env.SPREADSHEET_ID,
+  GOOGLE_CLIENT_EMAIL: process.env.GOOGLE_CLIENT_EMAIL,
+  GOOGLE_PRIVATE_KEY: (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
   PORT: process.env.PORT || 3000,
 };
 
@@ -84,10 +88,7 @@ function cleanReply(text) {
 
 // ===================== GỬI TELEGRAM =====================
 async function sendTelegram(lead, fbUserId) {
-  if (!CONFIG.TELEGRAM_BOT_TOKEN || !CONFIG.TELEGRAM_CHAT_ID) {
-    console.log("⚠️  Telegram chưa cấu hình, bỏ qua");
-    return;
-  }
+  if (!CONFIG.TELEGRAM_BOT_TOKEN || !CONFIG.TELEGRAM_CHAT_ID) return;
   const time = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
   const msg =
     `🔔 *KHÁCH HÀNG MỚI - IRON LAND*\n\n` +
@@ -102,11 +103,7 @@ async function sendTelegram(lead, fbUserId) {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: CONFIG.TELEGRAM_CHAT_ID,
-          text: msg,
-          parse_mode: "Markdown",
-        }),
+        body: JSON.stringify({ chat_id: CONFIG.TELEGRAM_CHAT_ID, text: msg, parse_mode: "Markdown" }),
       }
     );
     const json = await res.json();
@@ -114,6 +111,36 @@ async function sendTelegram(lead, fbUserId) {
     else console.error("❌ Telegram error:", json.description);
   } catch (err) {
     console.error("❌ Telegram error:", err.message);
+  }
+}
+
+// ===================== GHI GOOGLE SHEETS =====================
+async function appendToSheet(lead, fbUserId) {
+  if (!CONFIG.GOOGLE_CLIENT_EMAIL || !CONFIG.GOOGLE_PRIVATE_KEY || !CONFIG.SPREADSHEET_ID) {
+    console.log("⚠️  Google Sheets chưa cấu hình, bỏ qua");
+    return;
+  }
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: CONFIG.GOOGLE_CLIENT_EMAIL,
+        private_key: CONFIG.GOOGLE_PRIVATE_KEY,
+      },
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+    const sheets = google.sheets({ version: "v4", auth });
+    const time = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: CONFIG.SPREADSHEET_ID,
+      range: "Sheet1!A:E",
+      valueInputOption: "USER_ENTERED",
+      resource: {
+        values: [[time, lead.name, lead.phone, lead.course, fbUserId]],
+      },
+    });
+    console.log("✅ Google Sheets updated");
+  } catch (err) {
+    console.error("❌ Sheets error:", err.message);
   }
 }
 
@@ -181,7 +208,10 @@ app.post("/webhook", async (req, res) => {
         const lead = extractLead(rawReply);
         if (lead) {
           console.log(`🎯 Lead detected:`, lead);
-          await sendTelegram(lead, senderId);
+          await Promise.all([
+            sendTelegram(lead, senderId),
+            appendToSheet(lead, senderId),
+          ]);
         }
         await sendMessage(senderId, cleanReply(rawReply));
       } catch (err) {
@@ -192,5 +222,5 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-app.get("/", (req, res) => res.send("🚀 Iron Land Bot (Gemini + Telegram) đang chạy ✅"));
+app.get("/", (req, res) => res.send("🚀 Iron Land Bot (Gemini + Telegram + Sheets) đang chạy ✅"));
 app.listen(CONFIG.PORT, () => console.log(`🚀 Iron Land Bot chạy tại port ${CONFIG.PORT}`));
