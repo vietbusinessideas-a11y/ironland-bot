@@ -1,7 +1,7 @@
 {
   "name": "ironland-messenger-bot",
-  "version": "1.0.0",
-  "description": "Chatbot tư vấn khóa học Iron Land qua Facebook Messenger",
+  "version": "2.0.0",
+  "description": "Chatbot tư vấn khóa học Iron Land - Gemini API",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -9,9 +9,6 @@
   },
   "dependencies": {
     "express": "^4.18.2"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
   },
   "engines": {
     "node": ">=18.0.0"

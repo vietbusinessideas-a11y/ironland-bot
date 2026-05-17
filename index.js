@@ -4,15 +4,16 @@ app.use(express.json());
 
 // ===================== CẤU HÌNH =====================
 const CONFIG = {
-  VERIFY_TOKEN: process.env.VERIFY_TOKEN || "ironland_verify_2024",
+  VERIFY_TOKEN: process.env.VERIFY_TOKEN || "ironland2024",
   PAGE_ACCESS_TOKEN: process.env.PAGE_ACCESS_TOKEN,
-  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   PORT: process.env.PORT || 3000,
 };
 
 // ===================== DỮ LIỆU KHÓA HỌC =====================
-const COURSES_DATA = `
-DANH SÁCH KHÓA HỌC IRON LAND:
+const SYSTEM_PROMPT = `Bạn là trợ lý tư vấn của Iron Land — Trung tâm đào tạo Rope Access & Rescue Training Center tại Việt Nam.
+
+DANH SÁCH KHÓA HỌC:
 
 1. KHÓA LÀM VIỆC TRÊN CAO (Work at Heights)
    - Thời lượng: 1 ngày tại trung tâm Iron Land
@@ -37,11 +38,6 @@ DANH SÁCH KHÓA HỌC IRON LAND:
    - Học phí: Báo giá theo yêu cầu (liên hệ trực tiếp)
    - Kết quả: Kỹ năng quản lý an toàn, thiết kế hệ thống đu dây và cứu hộ chuyên nghiệp
    - Phù hợp: Quản lý an toàn, doanh nghiệp cần đào tạo chuyên sâu theo yêu cầu riêng
-`;
-
-const SYSTEM_PROMPT = `Bạn là trợ lý tư vấn của Iron Land — Trung tâm đào tạo Rope Access & Rescue Training Center tại Việt Nam.
-
-${COURSES_DATA}
 
 HƯỚNG DẪN TƯ VẤN:
 - Trả lời bằng tiếng Việt, thân thiện, ngắn gọn (tối đa 3-4 câu)
@@ -53,8 +49,7 @@ HƯỚNG DẪN TƯ VẤN:
 - Dùng emoji vừa phải cho thân thiện`;
 
 // ===================== LƯU LỊCH SỬ HỘI THOẠI =====================
-// Dùng Map để lưu tạm trong RAM (đủ dùng cho bot nhỏ)
-// Production: thay bằng Redis hoặc MongoDB
+// Gemini dùng format: { role: "user"/"model", parts: [{ text }] }
 const conversationHistory = new Map();
 
 function getHistory(userId) {
@@ -64,35 +59,47 @@ function getHistory(userId) {
   return conversationHistory.get(userId);
 }
 
-function addToHistory(userId, role, content) {
+function addToHistory(userId, role, text) {
   const history = getHistory(userId);
-  history.push({ role, content });
-  // Giữ tối đa 20 tin nhắn gần nhất để tránh tốn token
+  history.push({ role, parts: [{ text }] });
+  // Giữ tối đa 20 tin nhắn gần nhất
   if (history.length > 20) history.splice(0, 2);
 }
 
-// ===================== GỌI CLAUDE API =====================
-async function askClaude(userId, userMessage) {
+// ===================== GỌI GEMINI API =====================
+async function askGemini(userId, userMessage) {
   addToHistory(userId, "user", userMessage);
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+
+  const response = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": CONFIG.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      system: SYSTEM_PROMPT,
-      messages: getHistory(userId),
+      system_instruction: {
+        parts: [{ text: SYSTEM_PROMPT }],
+      },
+      contents: getHistory(userId),
+      generationConfig: {
+        maxOutputTokens: 500,
+        temperature: 0.7,
+      },
     }),
   });
 
   const data = await response.json();
-  const reply = data.content?.[0]?.text || "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.";
-  addToHistory(userId, "assistant", reply);
+
+  // Xử lý lỗi từ Gemini
+  if (data.error) {
+    console.error("Gemini error:", data.error);
+    throw new Error(data.error.message);
+  }
+
+  const reply =
+    data.candidates?.[0]?.content?.parts?.[0]?.text ||
+    "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.";
+
+  addToHistory(userId, "model", reply);
   return reply;
 }
 
@@ -102,7 +109,7 @@ async function sendMessage(recipientId, text) {
   const chunks = text.match(/.{1,1900}(\s|$)/gs) || [text];
 
   for (const chunk of chunks) {
-    await fetch(
+    const res = await fetch(
       `https://graph.facebook.com/v18.0/me/messages?access_token=${CONFIG.PAGE_ACCESS_TOKEN}`,
       {
         method: "POST",
@@ -113,6 +120,8 @@ async function sendMessage(recipientId, text) {
         }),
       }
     );
+    const json = await res.json();
+    if (json.error) console.error("FB send error:", json.error);
   }
 }
 
@@ -128,6 +137,7 @@ app.get("/webhook", (req, res) => {
     console.log("✅ Webhook verified!");
     res.status(200).send(challenge);
   } else {
+    console.warn("❌ Webhook verification failed");
     res.sendStatus(403);
   }
 });
@@ -141,7 +151,7 @@ app.post("/webhook", async (req, res) => {
 
   for (const entry of body.entry || []) {
     for (const event of entry.messaging || []) {
-      if (!event.message?.text) continue; // Bỏ qua sticker, file, v.v.
+      if (!event.message?.text) continue; // Bỏ qua sticker, file, reaction
 
       const senderId = event.sender.id;
       const messageText = event.message.text;
@@ -149,19 +159,24 @@ app.post("/webhook", async (req, res) => {
       console.log(`📨 [${senderId}]: ${messageText}`);
 
       try {
-        const reply = await askClaude(senderId, messageText);
+        const reply = await askGemini(senderId, messageText);
         await sendMessage(senderId, reply);
         console.log(`✉️  Reply sent to ${senderId}`);
       } catch (err) {
         console.error("❌ Error:", err.message);
-        await sendMessage(senderId, "Xin lỗi, hệ thống đang bận. Vui lòng thử lại sau ít phút nhé!");
+        await sendMessage(
+          senderId,
+          "Xin lỗi, hệ thống đang bận. Vui lòng thử lại sau ít phút nhé! 🙏"
+        );
       }
     }
   }
 });
 
 // Health check
-app.get("/", (req, res) => res.send("Iron Land Bot đang chạy ✅"));
+app.get("/", (req, res) =>
+  res.send("🚀 Iron Land Bot (Gemini) đang chạy ✅")
+);
 
 app.listen(CONFIG.PORT, () => {
   console.log(`🚀 Iron Land Bot chạy tại port ${CONFIG.PORT}`);
