@@ -11,55 +11,126 @@ const CONFIG = {
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
   SPREADSHEET_ID: process.env.SPREADSHEET_ID,
+  PRODUCT_SPREADSHEET_ID: process.env.PRODUCT_SPREADSHEET_ID,
   GOOGLE_CLIENT_EMAIL: process.env.GOOGLE_CLIENT_EMAIL,
   GOOGLE_PRIVATE_KEY: (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
   PORT: process.env.PORT || 3000,
 };
 
-// ===================== DỮ LIỆU KHÓA HỌC =====================
-const SYSTEM_PROMPT = `Bạn là trợ lý tư vấn của Iron Land — Trung tâm đào tạo Rope Access & Rescue Training Center tại Việt Nam.
+// ===================== GOOGLE AUTH =====================
+function getGoogleAuth() {
+  return new google.auth.GoogleAuth({
+    credentials: {
+      client_email: CONFIG.GOOGLE_CLIENT_EMAIL,
+      private_key: CONFIG.GOOGLE_PRIVATE_KEY,
+    },
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+}
+
+// ===================== ĐỌC DANH MỤC SẢN PHẨM =====================
+let productCatalog = "";
+let lastLoadTime = 0;
+const CACHE_DURATION = 30 * 60 * 1000; // Cache 30 phút, tự refresh khi có sản phẩm mới
+
+async function loadProductCatalog() {
+  // Dùng cache để tránh gọi API liên tục
+  if (productCatalog && Date.now() - lastLoadTime < CACHE_DURATION) {
+    return productCatalog;
+  }
+  if (!CONFIG.PRODUCT_SPREADSHEET_ID || !CONFIG.GOOGLE_CLIENT_EMAIL) {
+    return "";
+  }
+  try {
+    const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      range: "Trang tính1!A3:I200", // Bắt đầu từ hàng 3 (header), lấy đến 200 dòng
+    });
+    const rows = res.data.values || [];
+    if (rows.length === 0) return "";
+
+    // Bỏ qua hàng header (hàng 3), đọc từ hàng 4 trở đi
+    const dataRows = rows.slice(1).filter(r => r && (r[1] || r[2]));
+
+    let catalog = "DANH MỤC SẢN PHẨM & THIẾT BỊ AN TOÀN TRÊN CAO:\n\n";
+    let currentNo = "";
+
+    for (const row of dataRows) {
+      const no = row[0] || "";
+      const itemVN = row[1] || "";
+      const productName = row[2] || "";
+      const origin = row[3] || "";
+      const priceNoVAT = row[4] || "";
+      const unit = row[5] || "";
+      const priceWithVAT = row[6] || "";
+      const ghi_chu = row[8] || "";
+
+      // Chỉ in số thứ tự khi có
+      if (no && no !== currentNo) {
+        currentNo = no;
+        catalog += `${no}. ${itemVN}\n`;
+        if (productName) catalog += `   Model/Mô tả: ${productName}\n`;
+        if (origin) catalog += `   Xuất xứ: ${origin}\n`;
+        if (priceNoVAT) catalog += `   Giá chưa VAT: ${Number(String(priceNoVAT).replace(/,/g,'')).toLocaleString('vi-VN')} VND/${unit || 'cái'}\n`;
+        if (priceWithVAT) catalog += `   Giá có VAT: ${Number(String(priceWithVAT).replace(/,/g,'')).toLocaleString('vi-VN')} VND/${unit || 'cái'}\n`;
+        if (ghi_chu) catalog += `   Ghi chú: ${ghi_chu}\n`;
+        catalog += "\n";
+      } else if (!no && (itemVN || productName)) {
+        // Dòng con (merged cell) — thêm thông tin bổ sung
+        if (productName) catalog += `   - ${productName}\n`;
+      }
+    }
+
+    productCatalog = catalog;
+    lastLoadTime = Date.now();
+    console.log(`✅ Loaded ${dataRows.length} product rows from Sheet`);
+    return productCatalog;
+  } catch (err) {
+    console.error("❌ Load products error:", err.message);
+    return productCatalog; // Trả về cache cũ nếu lỗi
+  }
+}
+
+// ===================== TẠO SYSTEM PROMPT ĐỘNG =====================
+async function buildSystemPrompt() {
+  const products = await loadProductCatalog();
+  return `Bạn là trợ lý tư vấn của Iron Land — Trung tâm đào tạo Rope Access & Rescue và cung cấp thiết bị an toàn trên cao tại Việt Nam.
 
 DANH SÁCH KHÓA HỌC:
 
 1. KHÓA LÀM VIỆC TRÊN CAO (Work at Heights)
-   - Thời lượng: 1 ngày tại trung tâm Iron Land
-   - Học phí: 3.500.000 VND/người
-   - Kết quả: Kiến thức an toàn làm việc trên cao + Chứng chỉ nội bộ Iron Land
-   - Phù hợp: Người mới bắt đầu, cần nền tảng an toàn cơ bản
+   - Thời lượng: 1 ngày | Học phí: 3.500.000 VND/người
+   - Kết quả: Chứng chỉ nội bộ Iron Land
 
 2. KHÓA ĐU DÂY TIẾP CẬN CƠ BẢN - Chứng chỉ nội bộ
-   - Thời lượng: 3 ngày
-   - Học phí: 7.000.000 VND/người
-   - Kết quả: Kỹ năng rope access đầy đủ + Chứng chỉ nội bộ Iron Land
-   - Phù hợp: Muốn học kỹ thuật rope access, chứng chỉ dùng nội bộ doanh nghiệp
+   - Thời lượng: 3 ngày | Học phí: 7.000.000 VND/người
+   - Kết quả: Chứng chỉ nội bộ Iron Land
 
 3. KHÓA ĐU DÂY TIẾP CẬN CƠ BẢN - Chứng chỉ pháp lý
-   - Thời lượng: 3 ngày học + 1 ngày đánh giá (tổng 4 ngày)
-   - Học phí: 10.000.000 VND/người
-   - Kết quả: Chứng chỉ pháp lý nhà nước có giá trị toàn quốc + Thẻ ATVSLĐ Nhóm 3
-   - Phù hợp: Cần chứng chỉ pháp lý cho dự án, công trình yêu cầu chứng nhận nhà nước
+   - Thời lượng: 4 ngày | Học phí: 10.000.000 VND/người
+   - Kết quả: Chứng chỉ nhà nước + Thẻ ATVSLĐ Nhóm 3
 
 4. KHÓA ĐU DÂY NÂNG CAO & CỨU HỘ DÂY
-   - Thời lượng: Thiết kế theo nhu cầu
-   - Học phí: Báo giá theo yêu cầu (liên hệ trực tiếp)
-   - Kết quả: Kỹ năng quản lý an toàn, thiết kế hệ thống đu dây và cứu hộ chuyên nghiệp
-   - Phù hợp: Quản lý an toàn, doanh nghiệp cần đào tạo chuyên sâu theo yêu cầu riêng
+   - Thời lượng & học phí: Theo yêu cầu (liên hệ báo giá)
+
+${products ? products : ""}
 
 HƯỚNG DẪN TƯ VẤN:
-- Trả lời bằng tiếng Việt, thân thiện, ngắn gọn (tối đa 3-4 câu)
-- Hỏi thêm nhu cầu để tư vấn khóa học phù hợp nhất
-- Báo rõ học phí khi được hỏi
-- Khi khách muốn đăng ký: đề nghị để lại số điện thoại và tên để nhân viên liên hệ
+- Trả lời bằng tiếng Việt, thân thiện, ngắn gọn (tối đa 4-5 câu)
+- Tư vấn cả khóa học lẫn thiết bị phù hợp với nhu cầu khách
+- Khi khách hỏi sản phẩm: báo đúng tên, xuất xứ, giá có VAT
+- Khi khách muốn đặt hàng hoặc đăng ký học: đề nghị để lại SĐT và tên
 - Không bịa thêm thông tin ngoài dữ liệu đã cung cấp
-- Khóa nâng cao cần tư vấn thêm, mời khách để lại SĐT
 - Dùng emoji vừa phải cho thân thiện
 
 QUAN TRỌNG - PHÁT HIỆN SĐT:
-Khi khách nhắn tin có chứa số điện thoại (dãy số 10 chữ số bắt đầu bằng 0, hoặc +84), hãy:
-1. Cảm ơn khách và xác nhận đã nhận thông tin
-2. Hứa nhân viên sẽ liên hệ trong thời gian sớm nhất
-3. Thêm dòng cuối CHÍNH XÁC theo định dạng này (không thay đổi):
-[LEAD:SĐT={số điện thoại},TÊN={tên nếu có, nếu không có ghi "Chưa cung cấp"},KHÓA={khóa học quan tâm nếu biết, nếu không ghi "Chưa xác định"}]`;
+Khi khách nhắn có số điện thoại (10 số bắt đầu 0, hoặc +84):
+1. Cảm ơn và xác nhận đã nhận
+2. Hứa nhân viên liên hệ sớm nhất
+3. Thêm dòng cuối CHÍNH XÁC:
+[LEAD:SĐT={số điện thoại},TÊN={tên nếu có, không có ghi "Chưa cung cấp"},KHÓA={khóa/sản phẩm quan tâm, không có ghi "Chưa xác định"}]`;
+}
 
 // ===================== LƯU LỊCH SỬ HỘI THOẠI =====================
 const conversationHistory = new Map();
@@ -94,51 +165,36 @@ async function sendTelegram(lead, fbUserId) {
     `🔔 *KHÁCH HÀNG MỚI - IRON LAND*\n\n` +
     `📞 SĐT: *${lead.phone}*\n` +
     `👤 Tên: ${lead.name}\n` +
-    `📚 Khóa quan tâm: ${lead.course}\n` +
+    `📚 Quan tâm: ${lead.course}\n` +
     `🕐 Thời gian: ${time}\n` +
     `🆔 Facebook ID: \`${fbUserId}\``;
   try {
-    const res = await fetch(
-      `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: CONFIG.TELEGRAM_CHAT_ID, text: msg, parse_mode: "Markdown" }),
-      }
-    );
+    const res = await fetch(`https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: CONFIG.TELEGRAM_CHAT_ID, text: msg, parse_mode: "Markdown" }),
+    });
     const json = await res.json();
     if (json.ok) console.log("✅ Telegram sent");
-    else console.error("❌ Telegram error:", json.description);
+    else console.error("❌ Telegram:", json.description);
   } catch (err) {
     console.error("❌ Telegram error:", err.message);
   }
 }
 
-// ===================== GHI GOOGLE SHEETS =====================
+// ===================== GHI GOOGLE SHEETS (LEAD) =====================
 async function appendToSheet(lead, fbUserId) {
-  if (!CONFIG.GOOGLE_CLIENT_EMAIL || !CONFIG.GOOGLE_PRIVATE_KEY || !CONFIG.SPREADSHEET_ID) {
-    console.log("⚠️  Google Sheets chưa cấu hình, bỏ qua");
-    return;
-  }
+  if (!CONFIG.SPREADSHEET_ID) return;
   try {
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: CONFIG.GOOGLE_CLIENT_EMAIL,
-        private_key: CONFIG.GOOGLE_PRIVATE_KEY,
-      },
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-    });
-    const sheets = google.sheets({ version: "v4", auth });
+    const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
     const time = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
     await sheets.spreadsheets.values.append({
       spreadsheetId: CONFIG.SPREADSHEET_ID,
       range: "Trang tính1!A:E",
       valueInputOption: "USER_ENTERED",
-      resource: {
-        values: [[time, lead.name, lead.phone, lead.course, fbUserId]],
-      },
+      resource: { values: [[time, lead.name, lead.phone, lead.course, fbUserId]] },
     });
-    console.log("✅ Google Sheets updated");
+    console.log("✅ Sheets updated");
   } catch (err) {
     console.error("❌ Sheets error:", err.message);
   }
@@ -147,14 +203,15 @@ async function appendToSheet(lead, fbUserId) {
 // ===================== GỌI GEMINI API =====================
 async function askGemini(userId, userMessage) {
   addToHistory(userId, "user", userMessage);
+  const systemPrompt = await buildSystemPrompt();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      system_instruction: { parts: [{ text: systemPrompt }] },
       contents: getHistory(userId),
-      generationConfig: { maxOutputTokens: 500, temperature: 0.7 },
+      generationConfig: { maxOutputTokens: 600, temperature: 0.7 },
     }),
   });
   const data = await response.json();
@@ -185,7 +242,6 @@ async function sendMessage(recipientId, text) {
 app.get("/webhook", (req, res) => {
   const { "hub.mode": mode, "hub.verify_token": token, "hub.challenge": challenge } = req.query;
   if (mode === "subscribe" && token === CONFIG.VERIFY_TOKEN) {
-    console.log("✅ Webhook verified!");
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
@@ -196,7 +252,6 @@ app.post("/webhook", async (req, res) => {
   const body = req.body;
   if (body.object !== "page") return res.sendStatus(404);
   res.sendStatus(200);
-
   for (const entry of body.entry || []) {
     for (const event of entry.messaging || []) {
       if (!event.message?.text) continue;
@@ -207,11 +262,8 @@ app.post("/webhook", async (req, res) => {
         const rawReply = await askGemini(senderId, messageText);
         const lead = extractLead(rawReply);
         if (lead) {
-          console.log(`🎯 Lead detected:`, lead);
-          await Promise.all([
-            sendTelegram(lead, senderId),
-            appendToSheet(lead, senderId),
-          ]);
+          console.log(`🎯 Lead:`, lead);
+          await Promise.all([sendTelegram(lead, senderId), appendToSheet(lead, senderId)]);
         }
         await sendMessage(senderId, cleanReply(rawReply));
       } catch (err) {
@@ -223,4 +275,8 @@ app.post("/webhook", async (req, res) => {
 });
 
 app.get("/", (req, res) => res.send("🚀 Iron Land Bot (Gemini + Telegram + Sheets) đang chạy ✅"));
-app.listen(CONFIG.PORT, () => console.log(`🚀 Iron Land Bot chạy tại port ${CONFIG.PORT}`));
+
+// Load sản phẩm lần đầu khi khởi động
+loadProductCatalog().then(() => {
+  app.listen(CONFIG.PORT, () => console.log(`🚀 Iron Land Bot chạy tại port ${CONFIG.PORT}`));
+});
