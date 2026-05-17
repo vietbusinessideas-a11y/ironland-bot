@@ -61,25 +61,25 @@ async function loadProductCatalog() {
       const itemVN = row[1] || "";
       const productName = row[2] || "";
       const origin = row[3] || "";
-      const priceNoVAT = row[4] || "";
-      const unit = row[5] || "";
-      const priceWithVAT = row[6] || "";
-      const ghi_chu = row[8] || "";
+      const unitPrice = row[4] || ""; // Unit price chưa VAT
+      const unit = row[5] || "";      // ea, Mtrs, Pair...
+      const vat = row[6] || "";       // VAT %
+      const ghi_chu = row[7] || "";   // Ghi chú
 
-      // Chỉ in số thứ tự khi có
       if (no && no !== currentNo) {
         currentNo = no;
-        catalog += `${no}. ${itemVN}\n`;
-        if (productName) catalog += `   Model/Mô tả: ${productName}\n`;
-        if (origin) catalog += `   Xuất xứ: ${origin}\n`;
-        if (priceNoVAT) catalog += `   Giá chưa VAT: ${Number(String(priceNoVAT).replace(/,/g,'')).toLocaleString('vi-VN')} VND/${unit || 'cái'}\n`;
-        if (priceWithVAT) catalog += `   Giá có VAT: ${Number(String(priceWithVAT).replace(/,/g,'')).toLocaleString('vi-VN')} VND/${unit || 'cái'}\n`;
-        if (ghi_chu) catalog += `   Ghi chú: ${ghi_chu}\n`;
-        catalog += "\n";
+        catalog += no + '. ' + itemVN + '\n';
+        if (productName) catalog += '   Model/Mô tả: ' + productName + '\n';
+        if (origin) catalog += '   Xuất xứ: ' + origin + '\n';
+        if (unitPrice) catalog += '   Đơn giá (chưa VAT): ' + unitPrice + ' VND/' + (unit || 'cái') + '\n';
+        if (vat) catalog += '   VAT: ' + vat + '\n';
+        if (ghi_chu) catalog += '   Ghi chú: ' + ghi_chu + '\n';
+        catalog += '\n';
       } else if (!no && (itemVN || productName)) {
-        // Dòng con (merged cell) — thêm thông tin bổ sung
-        if (productName) catalog += `   - ${productName}\n`;
+        if (productName) catalog += '   - ' + productName + '\n';
       }
+
+
     }
 
     productCatalog = catalog;
