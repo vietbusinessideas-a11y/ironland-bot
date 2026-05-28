@@ -17,6 +17,22 @@ const CONFIG = {
   PORT: process.env.PORT || 3000,
 };
 
+// ===================== TRẠNG THÁI BOT THEO USER =====================
+// Set chứa các userId mà bot đang bị TẮT (mình đang tự handle)
+const botDisabledUsers = new Set();
+
+function isBotEnabled(userId) {
+  return !botDisabledUsers.has(userId);
+}
+
+function disableBot(userId) {
+  botDisabledUsers.add(userId);
+}
+
+function enableBot(userId) {
+  botDisabledUsers.delete(userId);
+}
+
 // ===================== GOOGLE AUTH =====================
 function getGoogleAuth() {
   return new google.auth.GoogleAuth({
@@ -31,10 +47,9 @@ function getGoogleAuth() {
 // ===================== ĐỌC DANH MỤC SẢN PHẨM =====================
 let productCatalog = "";
 let lastLoadTime = 0;
-const CACHE_DURATION = 30 * 60 * 1000; // Cache 30 phút, tự refresh khi có sản phẩm mới
+const CACHE_DURATION = 30 * 60 * 1000;
 
 async function loadProductCatalog() {
-  // Dùng cache để tránh gọi API liên tục
   if (productCatalog && Date.now() - lastLoadTime < CACHE_DURATION) {
     return productCatalog;
   }
@@ -45,14 +60,12 @@ async function loadProductCatalog() {
     const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
-      range: "Trang tính1!A3:I200", // Bắt đầu từ hàng 3 (header), lấy đến 200 dòng
+      range: "Trang tính1!A3:I200",
     });
     const rows = res.data.values || [];
     if (rows.length === 0) return "";
 
-    // Bỏ qua hàng header (hàng 3), đọc từ hàng 4 trở đi
     const dataRows = rows.slice(1).filter(r => r && (r[1] || r[2]));
-
     let catalog = "DANH MỤC SẢN PHẨM & THIẾT BỊ AN TOÀN TRÊN CAO:\n\n";
     let currentNo = "";
 
@@ -61,10 +74,10 @@ async function loadProductCatalog() {
       const itemVN = row[1] || "";
       const productName = row[2] || "";
       const origin = row[3] || "";
-      const unitPrice = row[4] || ""; // Unit price chưa VAT
-      const unit = row[5] || "";      // ea, Mtrs, Pair...
-      const vat = row[6] || "";       // VAT %
-      const ghi_chu = row[7] || "";   // Ghi chú
+      const unitPrice = row[4] || "";
+      const unit = row[5] || "";
+      const vat = row[6] || "";
+      const ghi_chu = row[7] || "";
 
       if (no && no !== currentNo) {
         currentNo = no;
@@ -86,7 +99,7 @@ async function loadProductCatalog() {
     return productCatalog;
   } catch (err) {
     console.error("❌ Load products error:", err.message);
-    return productCatalog; // Trả về cache cũ nếu lỗi
+    return productCatalog;
   }
 }
 
@@ -165,7 +178,10 @@ async function sendTelegram(lead, fbUserId) {
     `👤 Tên: ${lead.name}\n` +
     `📚 Quan tâm: ${lead.course}\n` +
     `🕐 Thời gian: ${time}\n` +
-    `🆔 Facebook ID: \`${fbUserId}\``;
+    `🆔 Facebook ID: \`${fbUserId}\`\n\n` +
+    `💡 Lệnh điều khiển bot:\n` +
+    `/off ${fbUserId} — tắt bot với khách này\n` +
+    `/on ${fbUserId} — bật lại bot`;
   try {
     const res = await fetch(`https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
@@ -177,6 +193,20 @@ async function sendTelegram(lead, fbUserId) {
     else console.error("❌ Telegram:", json.description);
   } catch (err) {
     console.error("❌ Telegram error:", err.message);
+  }
+}
+
+// ===================== GỬI TELEGRAM TEXT ĐƠN GIẢN =====================
+async function sendTelegramText(text) {
+  if (!CONFIG.TELEGRAM_BOT_TOKEN || !CONFIG.TELEGRAM_CHAT_ID) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: CONFIG.TELEGRAM_CHAT_ID, text, parse_mode: "Markdown" }),
+    });
+  } catch (err) {
+    console.error("❌ Telegram text error:", err.message);
   }
 }
 
@@ -236,7 +266,32 @@ async function sendMessage(recipientId, text) {
   }
 }
 
-// ===================== WEBHOOK =====================
+// ===================== ĐĂNG KÝ TELEGRAM WEBHOOK =====================
+async function setupTelegramWebhook() {
+  if (!CONFIG.TELEGRAM_BOT_TOKEN) return;
+  // Lấy server URL từ biến môi trường (Render/Railway tự set)
+  const serverUrl = process.env.RENDER_EXTERNAL_URL || process.env.RAILWAY_STATIC_URL || process.env.SERVER_URL;
+  if (!serverUrl) {
+    console.log("⚠️  Không tìm thấy SERVER_URL — bỏ qua tự đăng ký Telegram webhook.");
+    console.log("   Tự đăng ký thủ công tại: https://api.telegram.org/bot<TOKEN>/setWebhook?url=<SERVER_URL>/telegram");
+    return;
+  }
+  const webhookUrl = `${serverUrl}/telegram`;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: webhookUrl }),
+    });
+    const json = await res.json();
+    if (json.ok) console.log(`✅ Telegram webhook đã đăng ký: ${webhookUrl}`);
+    else console.error("❌ Telegram webhook error:", json.description);
+  } catch (err) {
+    console.error("❌ Setup webhook error:", err.message);
+  }
+}
+
+// ===================== WEBHOOK FACEBOOK =====================
 app.get("/webhook", (req, res) => {
   const { "hub.mode": mode, "hub.verify_token": token, "hub.challenge": challenge } = req.query;
   if (mode === "subscribe" && token === CONFIG.VERIFY_TOKEN) {
@@ -249,7 +304,7 @@ app.get("/webhook", (req, res) => {
 app.post("/webhook", async (req, res) => {
   const body = req.body;
   if (body.object !== "page") return res.sendStatus(404);
-  res.sendStatus(200); // Trả 200 ngay để FB không retry
+  res.sendStatus(200);
 
   for (const entry of body.entry || []) {
     for (const event of entry.messaging || []) {
@@ -261,24 +316,23 @@ app.post("/webhook", async (req, res) => {
       let messageText = null;
 
       if (event.message?.text) {
-        // Tin nhắn text bình thường
         messageText = event.message.text;
-
       } else if (event.postback?.payload) {
-        // Người dùng bấm nút / quick reply
         messageText = event.postback.title || event.postback.payload;
-
       } else if (event.message?.attachments) {
-        // Hình ảnh, sticker, file, voice
         const type = event.message.attachments[0]?.type;
         if (type === "image") messageText = "Bạn vừa gửi một hình ảnh.";
         else if (type === "audio") messageText = "Bạn vừa gửi tin nhắn thoại.";
         else if (type === "file") messageText = "Bạn vừa gửi một file.";
         else if (type === "video") messageText = "Bạn vừa gửi một video.";
-        else continue; // sticker, link preview... bỏ qua
-
+        else continue;
       } else {
-        // Loại event khác (reactions, seen...) → bỏ qua
+        continue;
+      }
+
+      // ✋ Kiểm tra bot có đang bị tắt với user này không
+      if (!isBotEnabled(senderId)) {
+        console.log(`🔕 Bot đang OFF với user ${senderId} — bỏ qua tin nhắn.`);
         continue;
       }
 
@@ -299,9 +353,76 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
+// ===================== WEBHOOK TELEGRAM (nhận lệnh /on /off /status) =====================
+app.post("/telegram", async (req, res) => {
+  res.sendStatus(200);
+  const msg = req.body?.message;
+  if (!msg?.text) return;
+
+  // Chỉ xử lý lệnh từ đúng CHAT_ID (bảo mật)
+  if (String(msg.chat.id) !== String(CONFIG.TELEGRAM_CHAT_ID)) {
+    console.log(`⚠️  Lệnh từ chat lạ: ${msg.chat.id} — bỏ qua.`);
+    return;
+  }
+
+  const text = msg.text.trim();
+  console.log(`📟 Telegram lệnh: ${text}`);
+
+  // /off <userId> — tắt bot với user đó
+  if (text.startsWith("/off ")) {
+    const userId = text.replace("/off ", "").trim();
+    if (!userId) {
+      await sendTelegramText("❌ Thiếu Facebook User ID. Dùng: `/off 123456789`");
+      return;
+    }
+    disableBot(userId);
+    await sendTelegramText(`🔕 Đã *TẮT* bot với user \`${userId}\`\nBạn có thể tự reply trong Messenger.\nDùng /on ${userId} để bật lại.`);
+    return;
+  }
+
+  // /on <userId> — bật lại bot với user đó
+  if (text.startsWith("/on ")) {
+    const userId = text.replace("/on ", "").trim();
+    if (!userId) {
+      await sendTelegramText("❌ Thiếu Facebook User ID. Dùng: `/on 123456789`");
+      return;
+    }
+    enableBot(userId);
+    await sendTelegramText(`✅ Đã *BẬT* bot với user \`${userId}\`\nBot sẽ tự động trả lời khách từ bây giờ.`);
+    return;
+  }
+
+  // /status — xem danh sách user đang bị tắt
+  if (text === "/status") {
+    if (botDisabledUsers.size === 0) {
+      await sendTelegramText("✅ Bot đang *BẬT* với tất cả người dùng. Không có ai bị tắt.");
+    } else {
+      const list = [...botDisabledUsers].map(id => `• \`${id}\``).join("\n");
+      await sendTelegramText(`🔕 Bot đang *TẮT* với ${botDisabledUsers.size} user:\n${list}`);
+    }
+    return;
+  }
+
+  // /help — hướng dẫn
+  if (text === "/help" || text === "/start") {
+    await sendTelegramText(
+      `🤖 *Iron Land Bot — Lệnh điều khiển*\n\n` +
+      `/off <userID> — Tắt bot, tự reply thủ công\n` +
+      `/on <userID>  — Bật lại bot tự động\n` +
+      `/status       — Xem user nào đang bị tắt\n\n` +
+      `💡 Facebook User ID xuất hiện trong thông báo lead mỗi khi có khách nhắn.`
+    );
+    return;
+  }
+
+  // Lệnh không nhận ra
+  await sendTelegramText(`❓ Lệnh không hợp lệ. Nhắn /help để xem hướng dẫn.`);
+});
+
 app.get("/", (req, res) => res.send("🚀 Iron Land Bot (Gemini + Telegram + Sheets) đang chạy ✅"));
 
-// Load sản phẩm lần đầu khi khởi động
-loadProductCatalog().then(() => {
+// Khởi động
+loadProductCatalog().then(async () => {
+  await setupTelegramWebhook();
   app.listen(CONFIG.PORT, () => console.log(`🚀 Iron Land Bot chạy tại port ${CONFIG.PORT}`));
 });
