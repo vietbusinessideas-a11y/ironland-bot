@@ -78,8 +78,6 @@ async function loadProductCatalog() {
       } else if (!no && (itemVN || productName)) {
         if (productName) catalog += '   - ' + productName + '\n';
       }
-
-
     }
 
     productCatalog = catalog;
@@ -251,12 +249,39 @@ app.get("/webhook", (req, res) => {
 app.post("/webhook", async (req, res) => {
   const body = req.body;
   if (body.object !== "page") return res.sendStatus(404);
-  res.sendStatus(200);
+  res.sendStatus(200); // Trả 200 ngay để FB không retry
+
   for (const entry of body.entry || []) {
     for (const event of entry.messaging || []) {
-      if (!event.message?.text) continue;
+
+      // Bỏ qua tin nhắn do bot tự gửi (echo)
+      if (event.message?.is_echo) continue;
+
       const senderId = event.sender.id;
-      const messageText = event.message.text;
+      let messageText = null;
+
+      if (event.message?.text) {
+        // Tin nhắn text bình thường
+        messageText = event.message.text;
+
+      } else if (event.postback?.payload) {
+        // Người dùng bấm nút / quick reply
+        messageText = event.postback.title || event.postback.payload;
+
+      } else if (event.message?.attachments) {
+        // Hình ảnh, sticker, file, voice
+        const type = event.message.attachments[0]?.type;
+        if (type === "image") messageText = "Bạn vừa gửi một hình ảnh.";
+        else if (type === "audio") messageText = "Bạn vừa gửi tin nhắn thoại.";
+        else if (type === "file") messageText = "Bạn vừa gửi một file.";
+        else if (type === "video") messageText = "Bạn vừa gửi một video.";
+        else continue; // sticker, link preview... bỏ qua
+
+      } else {
+        // Loại event khác (reactions, seen...) → bỏ qua
+        continue;
+      }
+
       console.log(`📨 [${senderId}]: ${messageText}`);
       try {
         const rawReply = await askGemini(senderId, messageText);
