@@ -115,7 +115,7 @@ DANH SÁCH KHÓA HỌC:
    - Kết quả: Chứng chỉ nội bộ Iron Land
 
 2. KHÓA ĐU DÂY TIẾP CẬN CƠ BẢN - Chứng chỉ nội bộ
-   - Thời lượng: 3 ngày | Học phí: 7.000.000 VND/người
+   - Thời lượng: 3 ngày | Học phí: 6.900.000 VND/người
    - Kết quả: Chứng chỉ nội bộ Iron Land
 
 3. KHÓA ĐU DÂY TIẾP CẬN CƠ BẢN - Chứng chỉ pháp lý
