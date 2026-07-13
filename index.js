@@ -15,10 +15,12 @@ const CONFIG = {
   GOOGLE_CLIENT_EMAIL: process.env.GOOGLE_CLIENT_EMAIL,
   GOOGLE_PRIVATE_KEY: (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
   PORT: process.env.PORT || 3000,
+  // Số phút chờ admin trả lời tiếp trước khi bot tự động trả lời lại
+  AUTO_RESUME_MINUTES: parseInt(process.env.AUTO_RESUME_MINUTES || "15", 10),
 };
 
 // ===================== TRẠNG THÁI BOT THEO USER =====================
-// Set chứa các userId mà bot đang bị TẮT (mình đang tự handle)
+// Set chứa các userId mà bot đang bị TẮT VĨNH VIỄN qua lệnh /off (chỉ /on mới bật lại)
 const botDisabledUsers = new Set();
 
 function isBotEnabled(userId) {
@@ -27,10 +29,71 @@ function isBotEnabled(userId) {
 
 function disableBot(userId) {
   botDisabledUsers.add(userId);
+  autoPaused.delete(userId); // /off ghi đè, không cần theo dõi auto-pause nữa
 }
 
 function enableBot(userId) {
   botDisabledUsers.delete(userId);
+  autoPaused.delete(userId);
+}
+
+// ===================== TỰ ĐỘNG TẠM DỪNG KHI ADMIN TỰ TRẢ LỜI =====================
+// userId -> { timer, pending: [tin nhắn khách gửi trong lúc chờ] }
+const autoPaused = new Map();
+
+// Ghi nhớ mid của tin nhắn do CHÍNH BOT gửi, để phân biệt với admin trả lời tay
+// (Facebook gửi event "echo" cho MỌI tin nhắn Page gửi ra, kể cả của bot lẫn admin)
+const sentMids = new Map(); // mid -> timestamp
+function rememberSentMid(mid) {
+  if (mid) sentMids.set(mid, Date.now());
+}
+function wasSentByBot(mid) {
+  if (mid && sentMids.has(mid)) {
+    sentMids.delete(mid);
+    return true;
+  }
+  return false;
+}
+// Dọn rác định kỳ phòng trường hợp mid không bao giờ nhận lại được echo
+setInterval(() => {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  for (const [mid, ts] of sentMids) if (ts < cutoff) sentMids.delete(mid);
+}, 15 * 60 * 1000);
+
+// Admin vừa tự trả lời thủ công trong Messenger -> tạm dừng bot cho khách này
+function handleAdminManualReply(customerId) {
+  if (botDisabledUsers.has(customerId)) return; // đã tắt vĩnh viễn rồi, khỏi cần lo
+  const existing = autoPaused.get(customerId);
+  if (existing?.timer) clearTimeout(existing.timer);
+  const wasAlreadyPaused = !!existing;
+  autoPaused.set(customerId, { timer: null, pending: [] });
+  console.log(`✋ Admin trả lời thủ công cho ${customerId} — tạm dừng bot tự động.`);
+  if (!wasAlreadyPaused) {
+    sendTelegramText(
+      `✋ Phát hiện bạn *tự trả lời* khách \`${customerId}\` trong Messenger — bot đã *tạm dừng* cho khách này.\n` +
+      `Nếu khách nhắn tiếp mà bạn không trả lời trong *${CONFIG.AUTO_RESUME_MINUTES} phút*, bot sẽ tự động trả lời lại.`
+    );
+  }
+}
+
+// Hết thời gian chờ mà admin không trả lời tiếp -> bot tự động trả lời các tin nhắn đang chờ
+async function resumeAfterSilence(userId) {
+  const paused = autoPaused.get(userId);
+  autoPaused.delete(userId);
+  if (!paused || paused.pending.length === 0) return;
+  console.log(`⏰ Admin im lặng ${CONFIG.AUTO_RESUME_MINUTES} phút — bot tiếp tục trả lời ${userId}.`);
+  const combinedText = paused.pending.join("\n");
+  try {
+    const rawReply = await askGemini(userId, combinedText);
+    const lead = extractLead(rawReply);
+    if (lead) {
+      await Promise.all([sendTelegram(lead, userId), appendToSheet(lead, userId)]);
+    }
+    await sendMessage(userId, cleanReply(rawReply));
+    await sendTelegramText(`⏰ Không thấy bạn trả lời trong ${CONFIG.AUTO_RESUME_MINUTES} phút — bot đã *tự động trả lời tiếp* cho khách \`${userId}\`.`);
+  } catch (err) {
+    console.error("❌ Resume error:", err.message);
+  }
 }
 
 // ===================== GOOGLE AUTH =====================
@@ -265,6 +328,7 @@ async function sendMessage(recipientId, text) {
     );
     const json = await res.json();
     if (json.error) console.error("FB send error:", json.error);
+    else rememberSentMid(json.message_id);
   }
 }
 
@@ -311,8 +375,16 @@ app.post("/webhook", async (req, res) => {
   for (const entry of body.entry || []) {
     for (const event of entry.messaging || []) {
 
-      // Bỏ qua tin nhắn do bot tự gửi (echo)
-      if (event.message?.is_echo) continue;
+      // Facebook gửi "echo" cho MỌI tin nhắn Page gửi ra (cả bot lẫn admin gõ tay)
+      if (event.message?.is_echo) {
+        const mid = event.message.mid;
+        if (!wasSentByBot(mid)) {
+          // mid này không phải do bot gửi -> admin vừa tự trả lời thủ công
+          const customerId = event.recipient?.id;
+          if (customerId) handleAdminManualReply(customerId);
+        }
+        continue;
+      }
 
       const senderId = event.sender.id;
       let messageText = null;
@@ -332,9 +404,21 @@ app.post("/webhook", async (req, res) => {
         continue;
       }
 
-      // ✋ Kiểm tra bot có đang bị tắt với user này không
+      // ✋ Kiểm tra bot có đang bị tắt vĩnh viễn (/off) với user này không
       if (!isBotEnabled(senderId)) {
         console.log(`🔕 Bot đang OFF với user ${senderId} — bỏ qua tin nhắn.`);
+        continue;
+      }
+
+      // ⏸️ Bot đang tạm dừng vì admin vừa tự trả lời — đợi thêm AUTO_RESUME_MINUTES
+      // rồi mới tự động trả lời (gộp các tin nhắn khách gửi trong lúc chờ)
+      const paused = autoPaused.get(senderId);
+      if (paused) {
+        console.log(`⏸️  [${senderId}] đang tạm dừng (admin vừa trả lời) — xếp hàng chờ.`);
+        paused.pending.push(messageText);
+        if (paused.timer) clearTimeout(paused.timer);
+        paused.timer = setTimeout(() => resumeAfterSilence(senderId), CONFIG.AUTO_RESUME_MINUTES * 60 * 1000);
+        autoPaused.set(senderId, paused);
         continue;
       }
 
@@ -394,14 +478,24 @@ app.post("/telegram", async (req, res) => {
     return;
   }
 
-  // /status — xem danh sách user đang bị tắt
+  // /status — xem danh sách user đang bị tắt (vĩnh viễn hoặc tạm dừng)
   if (text === "/status") {
+    let msgOut = "";
     if (botDisabledUsers.size === 0) {
-      await sendTelegramText("✅ Bot đang *BẬT* với tất cả người dùng. Không có ai bị tắt.");
+      msgOut += "✅ Không có user nào bị tắt vĩnh viễn (/off).\n";
     } else {
       const list = [...botDisabledUsers].map(id => `• \`${id}\``).join("\n");
-      await sendTelegramText(`🔕 Bot đang *TẮT* với ${botDisabledUsers.size} user:\n${list}`);
+      msgOut += `🔕 Đang *TẮT vĩnh viễn* (${botDisabledUsers.size}):\n${list}\n`;
     }
+    if (autoPaused.size === 0) {
+      msgOut += "\n✅ Không có user nào đang tạm dừng do admin trả lời tay.";
+    } else {
+      const list = [...autoPaused.entries()]
+        .map(([id, p]) => `• \`${id}\` (${p.pending.length} tin đang chờ)`)
+        .join("\n");
+      msgOut += `\n⏸️ Đang *tạm dừng* (${autoPaused.size}), tự bật lại sau ${CONFIG.AUTO_RESUME_MINUTES} phút nếu bạn không trả lời tiếp:\n${list}`;
+    }
+    await sendTelegramText(msgOut);
     return;
   }
 
@@ -409,10 +503,12 @@ app.post("/telegram", async (req, res) => {
   if (text === "/help" || text === "/start") {
     await sendTelegramText(
       `🤖 *Iron Land Bot — Lệnh điều khiển*\n\n` +
-      `/off <userID> — Tắt bot, tự reply thủ công\n` +
+      `/off <userID> — Tắt bot vĩnh viễn, tự reply thủ công\n` +
       `/on <userID>  — Bật lại bot tự động\n` +
-      `/status       — Xem user nào đang bị tắt\n\n` +
-      `💡 Facebook User ID xuất hiện trong thông báo lead mỗi khi có khách nhắn.`
+      `/status       — Xem user nào đang bị tắt / tạm dừng\n\n` +
+      `💡 Bot tự nhận biết khi bạn trả lời tay trong Messenger và *tự tạm dừng* cho khách đó.\n` +
+      `Nếu khách nhắn tiếp mà bạn không trả lời trong ${CONFIG.AUTO_RESUME_MINUTES} phút, bot tự động trả lời lại (không cần /on).\n` +
+      `Facebook User ID xuất hiện trong thông báo lead mỗi khi có khách nhắn.`
     );
     return;
   }
