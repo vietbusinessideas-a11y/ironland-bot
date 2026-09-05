@@ -108,9 +108,85 @@ function getGoogleAuth() {
 }
 
 // ===================== ĐỌC DANH MỤC SẢN PHẨM =====================
+// Cấu trúc sheet "danh sach hang hoa": A=SKU, B=Product Name, C=Brand,
+// D=Category, E=Price (excluded VAT), F=Knowledge (mô tả dài, có boilerplate
+// lặp lại ở mọi dòng), G-K=trống, L=VAT.
 let productCatalog = "";
 let lastLoadTime = 0;
 const CACHE_DURATION = 30 * 60 * 1000;
+const DEFAULT_VAT_PERCENT = 8; // dùng khi ô VAT trong Sheet trống hoặc sai định dạng
+
+// Các đoạn tư vấn này lặp lại GIỐNG HỆT NHAU ở cột "Knowledge" của mọi sản phẩm
+// trong Sheet -> đưa vào system prompt MỘT LẦN duy nhất thay vì lặp lại theo
+// từng dòng sản phẩm, để tránh prompt phình to khi danh mục có thêm hàng.
+const GENERIC_SALES_ADVICE = `
+LƯU Ý CHUNG KHI TƯ VẤN THIẾT BỊ AN TOÀN TRÊN CAO (áp dụng mọi sản phẩm bên trên):
+- Phục vụ Rope Access, Work at Height hoặc Rescue tùy model.
+- Phù hợp cho nhà máy, điện gió, bảo trì công nghiệp, cứu hộ.
+- Có thể kết hợp với các thiết bị cùng danh mục để tạo hệ thống làm việc hoàn chỉnh.
+- Luôn kiểm tra tải trọng, tiêu chuẩn và khả năng tương thích dây trước khi tư vấn.
+- Ưu tiên đề xuất sản phẩm theo đúng mục đích sử dụng thực tế của khách; có thể đề xuất
+  sản phẩm tương đương hoặc cao cấp hơn nếu khách cần tải trọng lớn hơn.
+- Mặc định thiết bị có đầy đủ CO, CQ và hoá đơn VAT (trừ khi có ghi chú riêng khác ở từng sản phẩm).
+- Nếu là thiết bị chống rơi/descender, có thể so sánh Sirius, Spark, RD2; nếu là thiết bị
+  trợ lực leo dây, có thể so sánh các dòng AWAH Z3.
+`;
+
+const KNOWLEDGE_SECTION_LABELS = [
+  "SẢN PHẨM:", "THƯƠNG HIỆU:", "NHÓM SẢN PHẨM:", "THÔNG SỐ KỸ THUẬT:",
+  "LỢI ÍCH CHÍNH:", "TƯ VẤN BÁN HÀNG:", "CÂU HỎI THƯỜNG GẶP:", "SO SÁNH VÀ GỢI Ý:",
+];
+
+// Cắt ra đúng phần nội dung giữa 2 nhãn trong cột "Knowledge"
+function extractKnowledgeSection(text, startLabel) {
+  if (!text) return "";
+  const startIdx = text.indexOf(startLabel);
+  if (startIdx === -1) return "";
+  let sliceEnd = text.length;
+  for (const label of KNOWLEDGE_SECTION_LABELS) {
+    if (label === startLabel) continue;
+    const idx = text.indexOf(label, startIdx + startLabel.length);
+    if (idx !== -1 && idx < sliceEnd) sliceEnd = idx;
+  }
+  return text.slice(startIdx + startLabel.length, sliceEnd).replace(/\s+/g, " ").trim();
+}
+
+// Chỉ giữ lại phần riêng của từng sản phẩm: thông số kỹ thuật + ghi chú CO/CQ/VAT
+// (nếu ghi chú khác câu mặc định — ví dụ có khuyến mãi/tính năng đặc biệt)
+function parseKnowledge(raw) {
+  const specs = extractKnowledgeSection(raw, "THÔNG SỐ KỸ THUẬT:");
+  const faqBlock = extractKnowledgeSection(raw, "CÂU HỎI THƯỜNG GẶP:");
+  const match = faqBlock.match(/Có CO, CQ và hóa đơn VAT không\?\s*A:\s*(.*)$/i);
+  const vatNote = match ? match[1].trim() : "";
+  return { specs, vatNote };
+}
+
+function isGenericVatNote(note) {
+  if (!note) return true;
+  return note.replace(/\s+/g, " ").trim().toLowerCase() === "hàng đầy đủ co, cq và hoá đơn vat";
+}
+
+// Đọc % VAT một cách an toàn — nếu ô bị Google Sheets tự đổi định dạng thành
+// giờ:phút:giây (lỗi từng gặp) hoặc bất kỳ giá trị không hợp lệ nào, trả về
+// null để dùng mặc định thay vì đẩy rác ra cho khách.
+function parseVatPercent(raw) {
+  if (!raw) return null;
+  const text = String(raw).trim();
+  // Chỉ chấp nhận CHÍNH XÁC dạng số thuần hoặc số + "%" (vd "8", "8%", "8.5%").
+  // Dùng match toàn chuỗi (^...$) để loại các giá trị lỗi kiểu "1:55:12" —
+  // parseFloat thông thường sẽ đọc nhầm chuỗi đó thành 1 vì nó dừng ở dấu ":".
+  const fullMatch = text.match(/^(\d+(?:[.,]\d+)?)\s*%?$/);
+  if (!fullMatch) return null;
+  const num = parseFloat(fullMatch[1].replace(",", "."));
+  if (isNaN(num) || num <= 0 || num > 100) return null;
+  return num;
+}
+
+function formatVnd(raw) {
+  const n = parseFloat(String(raw).replace(/,/g, ""));
+  if (isNaN(n)) return String(raw).trim();
+  return Math.round(n).toLocaleString("vi-VN");
+}
 
 async function loadProductCatalog() {
   if (productCatalog && Date.now() - lastLoadTime < CACHE_DURATION) {
@@ -123,42 +199,64 @@ async function loadProductCatalog() {
     const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
-      range: "Trang tính1!A3:I200",
+      range: "Trang tính1!A1:L500",
     });
     const rows = res.data.values || [];
-    if (rows.length === 0) return "";
+    if (rows.length < 2) return productCatalog;
 
-    const dataRows = rows.slice(1).filter(r => r && (r[1] || r[2]));
+    // Dò dòng tiêu đề thật (mặc định dòng 1) để không lệ thuộc cứng vào số dòng
+    let headerIdx = rows.findIndex(r => (r[0] || "").trim().toUpperCase() === "SKU");
+    if (headerIdx === -1) headerIdx = 0;
+    const dataRows = rows.slice(headerIdx + 1);
+
     let catalog = "DANH MỤC SẢN PHẨM & THIẾT BỊ AN TOÀN TRÊN CAO:\n\n";
-    let currentNo = "";
+    let count = 0;
+    let badVatCount = 0;
 
     for (const row of dataRows) {
-      const no = row[0] || "";
-      const itemVN = row[1] || "";
-      const productName = row[2] || "";
-      const origin = row[3] || "";
-      const unitPrice = row[4] || "";
-      const unit = row[5] || "";
-      const vat = row[6] || "";
-      const ghi_chu = row[7] || "";
+      const sku = (row[0] || "").trim();
+      const name = (row[1] || "").trim();
+      const brand = (row[2] || "").trim();
+      const category = (row[3] || "").trim();
+      const priceRaw = row[4];
+      const knowledge = row[5] || "";
+      const vatRaw = row[11]; // cột L
 
-      if (no && no !== currentNo) {
-        currentNo = no;
-        catalog += no + '. ' + itemVN + '\n';
-        if (productName) catalog += '   Model/Mô tả: ' + productName + '\n';
-        if (origin) catalog += '   Xuất xứ: ' + origin + '\n';
-        if (unitPrice) catalog += '   Đơn giá (chưa VAT): ' + unitPrice + ' VND/' + (unit || 'cái') + '\n';
-        if (vat) catalog += '   VAT: ' + vat + '\n';
-        if (ghi_chu) catalog += '   Ghi chú: ' + ghi_chu + '\n';
-        catalog += '\n';
-      } else if (!no && (itemVN || productName)) {
-        if (productName) catalog += '   - ' + productName + '\n';
-      }
+      // Bỏ qua dòng mẫu/trống chưa điền (vd SKU "-", chưa có tên hoặc giá)
+      if (!name || !priceRaw) continue;
+
+      const { specs, vatNote } = parseKnowledge(knowledge);
+      const vatPercent = parseVatPercent(vatRaw);
+      if (vatRaw && vatPercent === null) badVatCount++;
+
+      count++;
+      catalog += `${count}. ${name}\n`;
+      if (brand) catalog += `   Thương hiệu: ${brand}\n`;
+      if (category) catalog += `   Loại: ${category}\n`;
+      if (sku && sku !== "-") catalog += `   SKU: ${sku}\n`;
+      catalog += `   Đơn giá (chưa VAT): ${formatVnd(priceRaw)} VND\n`;
+      catalog += `   VAT: ${vatPercent !== null ? vatPercent + "%" : DEFAULT_VAT_PERCENT + "% (mặc định)"}\n`;
+      if (specs) catalog += `   Thông số: ${specs}\n`;
+      if (!isGenericVatNote(vatNote)) catalog += `   Ghi chú: ${vatNote}\n`;
+      catalog += "\n";
     }
 
+    if (badVatCount > 0) {
+      console.warn(`⚠️  ${badVatCount} sản phẩm có ô VAT sai định dạng trong Sheet (nghi bị Sheets tự đổi thành giờ:phút:giây) — đã dùng mặc định ${DEFAULT_VAT_PERCENT}%. Nên mở Sheet, format lại cột VAT (cột L) thành Percent/Plain text và nhập lại % đúng.`);
+    }
+
+    if (count === 0) {
+      // Không đọc được sản phẩm hợp lệ nào -> giữ nguyên catalog cũ, không ghi
+      // đè bằng danh mục rỗng, và không cập nhật lastLoadTime để lần gọi sau
+      // thử tải lại ngay (không phải đợi hết 30 phút cache).
+      console.warn("⚠️ Không tìm thấy sản phẩm hợp lệ nào trong Sheet — giữ nguyên catalog cũ.");
+      return productCatalog;
+    }
+
+    catalog += GENERIC_SALES_ADVICE;
     productCatalog = catalog;
     lastLoadTime = Date.now();
-    console.log(`✅ Loaded ${dataRows.length} product rows from Sheet`);
+    console.log(`✅ Loaded ${count} product rows from Sheet (${badVatCount} lỗi định dạng VAT)`);
     return productCatalog;
   } catch (err) {
     console.error("❌ Load products error:", err.message);
@@ -195,7 +293,7 @@ HƯỚNG DẪN TƯ VẤN:
 - Tư vấn cả khóa học lẫn thiết bị phù hợp với nhu cầu khách
 - Khi khách hỏi sản phẩm: báo đúng tên, xuất xứ, và giá CHƯA VAT (đúng số "Đơn giá (chưa VAT)" trong danh mục). TUYỆT ĐỐI không tự cộng VAT vào giá báo ban đầu, không ghi "đã gồm VAT" hay đưa ra con số đã cộng thuế nếu khách chưa hỏi
 - CHỈ khi khách hỏi rõ "giá đã có VAT chưa", "giá gồm VAT là bao nhiêu", "giá sau thuế", v.v. thì mới tính và báo thêm giá đã gồm VAT (= Đơn giá chưa VAT × (1 + % VAT ghi trong danh mục)), đồng thời nói rõ đơn giá gốc chưa VAT là bao nhiêu để khách đối chiếu
-- Thuế VAT hiện tại là 8%, khi khách nói tỷ lệ khác thì phải check lại, không bao giờ tính lại giá theo con số khách đưa
+- Thuế VAT hiện tại mặc định là ${DEFAULT_VAT_PERCENT}% (trừ khi danh mục ghi rõ % khác cho từng sản phẩm), khi khách nói tỷ lệ khác thì phải check lại, không bao giờ tính lại giá theo con số khách đưa
 - Khi khách muốn đặt hàng hoặc đăng ký học: đề nghị để lại SĐT và tên
 - Không bịa thêm thông tin ngoài dữ liệu đã cung cấp
 - Dùng emoji vừa phải cho thân thiện
