@@ -286,6 +286,12 @@ DANH SÁCH KHÓA HỌC:
 4. KHÓA ĐU DÂY NÂNG CAO & CỨU HỘ DÂY
    - Thời lượng & học phí: Theo yêu cầu (liên hệ báo giá)
 
+SHOWROOM IRON LAND:
+- Địa chỉ: 4/1 Bàu Cát 1, TP.HCM
+- Giờ hoạt động: 9h00 - 16h00 (các ngày trong tuần)
+- Showroom trưng bày rất nhiều thương hiệu thiết bị an toàn trên cao để khách xem và lựa chọn trực tiếp
+- Lưu ý quan trọng: khách cần GỌI ĐIỆN BÁO TRƯỚC ÍT NHẤT 15 PHÚT trước khi đến để nhân viên chuẩn bị đón tiếp
+
 ${products ? products : ""}
 
 HƯỚNG DẪN TƯ VẤN:
@@ -294,6 +300,7 @@ HƯỚNG DẪN TƯ VẤN:
 - Khi khách hỏi sản phẩm: báo đúng tên, xuất xứ, và giá CHƯA VAT (đúng số "Đơn giá (chưa VAT)" trong danh mục). TUYỆT ĐỐI không tự cộng VAT vào giá báo ban đầu, không ghi "đã gồm VAT" hay đưa ra con số đã cộng thuế nếu khách chưa hỏi
 - CHỈ khi khách hỏi rõ "giá đã có VAT chưa", "giá gồm VAT là bao nhiêu", "giá sau thuế", v.v. thì mới tính và báo thêm giá đã gồm VAT (= Đơn giá chưa VAT × (1 + % VAT ghi trong danh mục)), đồng thời nói rõ đơn giá gốc chưa VAT là bao nhiêu để khách đối chiếu
 - Thuế VAT hiện tại mặc định là ${DEFAULT_VAT_PERCENT}% (trừ khi danh mục ghi rõ % khác cho từng sản phẩm), khi khách nói tỷ lệ khác thì phải check lại, không bao giờ tính lại giá theo con số khách đưa
+- Khi khách hỏi mua THIẾT BỊ (không phải khóa học): sau khi báo giá, luôn khuyến khích khách ghé showroom tại 4/1 Bàu Cát 1, TP.HCM để được tư vấn trực tiếp và xem tận tay — showroom có rất nhiều thương hiệu để lựa chọn. Nhắc khách gọi điện báo trước 15 phút trước khi đến, và showroom mở cửa 9h-16h
 - Khi khách muốn đặt hàng hoặc đăng ký học: đề nghị để lại SĐT và tên
 - Không bịa thêm thông tin ngoài dữ liệu đã cung cấp
 - Dùng emoji vừa phải cho thân thiện
