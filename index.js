@@ -493,14 +493,21 @@ app.post("/webhook", async (req, res) => {
 
       const senderId = event.sender.id;
       let messageText = null;
+      let isSticker = false;
 
       if (event.message?.text) {
         messageText = event.message.text;
       } else if (event.postback?.payload) {
         messageText = event.postback.title || event.postback.payload;
       } else if (event.message?.attachments) {
-        const type = event.message.attachments[0]?.type;
-        if (type === "image") messageText = "Bạn vừa gửi một hình ảnh.";
+        const attachment = event.message.attachments[0];
+        const type = attachment?.type;
+        // Sticker/icon cảm xúc (like 👍, các emoji dán nhanh...) luôn có sticker_id
+        // trong payload — khác với ảnh thật khách chụp/gửi lên (không có trường này).
+        if (attachment?.payload?.sticker_id) {
+          isSticker = true;
+          messageText = "[sticker]";
+        } else if (type === "image") messageText = "Bạn vừa gửi một hình ảnh.";
         else if (type === "audio") messageText = "Bạn vừa gửi tin nhắn thoại.";
         else if (type === "file") messageText = "Bạn vừa gửi một file.";
         else if (type === "video") messageText = "Bạn vừa gửi một video.";
@@ -524,6 +531,14 @@ app.post("/webhook", async (req, res) => {
         if (paused.timer) clearTimeout(paused.timer);
         paused.timer = setTimeout(() => resumeAfterSilence(senderId), CONFIG.AUTO_RESUME_MINUTES * 60 * 1000);
         autoPaused.set(senderId, paused);
+        continue;
+      }
+
+      // 👍 Khách gửi sticker/icon (like, emoji dán nhanh...) — chỉ cần cảm ơn
+      // ngắn gọn, KHÔNG gọi Gemini (đỡ tốn phí + tránh trả lời dài "không xem được ảnh")
+      if (isSticker) {
+        console.log(`👍 [${senderId}] gửi sticker/icon — trả lời cảm ơn ngắn gọn.`);
+        await sendMessage(senderId, "Dạ em cảm ơn bạn nhé! 😊");
         continue;
       }
 
