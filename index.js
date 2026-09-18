@@ -115,6 +115,7 @@ let productCatalog = "";
 let lastLoadTime = 0;
 const CACHE_DURATION = 30 * 60 * 1000;
 const DEFAULT_VAT_PERCENT = 8; // dùng khi ô VAT trong Sheet trống hoặc sai định dạng
+const HOTLINE_PHONE = "0907 713 137"; // Hotline sếp — dùng khi khách hỏi sản phẩm ngoài danh mục
 
 // Các đoạn tư vấn này lặp lại GIỐNG HỆT NHAU ở cột "Knowledge" của mọi sản phẩm
 // trong Sheet -> đưa vào system prompt MỘT LẦN duy nhất thay vì lặp lại theo
@@ -302,6 +303,7 @@ HƯỚNG DẪN TƯ VẤN:
 - CHỈ khi khách hỏi rõ "giá đã có VAT chưa", "giá gồm VAT là bao nhiêu", "giá sau thuế", v.v. thì mới tính và báo thêm giá đã gồm VAT (= Đơn giá chưa VAT × (1 + % VAT ghi trong danh mục)), đồng thời nói rõ đơn giá gốc chưa VAT là bao nhiêu để khách đối chiếu
 - Thuế VAT hiện tại mặc định là ${DEFAULT_VAT_PERCENT}% (trừ khi danh mục ghi rõ % khác cho từng sản phẩm), khi khách nói tỷ lệ khác thì phải check lại, không bao giờ tính lại giá theo con số khách đưa
 - Khi khách hỏi mua THIẾT BỊ (không phải khóa học): sau khi báo giá, luôn khuyến khích khách ghé showroom tại 4/1 Bàu Cát 1, TP.HCM để được tư vấn trực tiếp và xem tận tay — showroom có rất nhiều thương hiệu để lựa chọn. Nhắc khách gọi điện báo trước 15 phút trước khi đến, và showroom mở cửa 9h-16h
+- Khi khách hỏi mua một sản phẩm/thiết bị KHÔNG có trong danh mục ở trên: KHÔNG nói "không có hàng" hay "hết hàng". Thay vào đó trả lời theo hướng: sếp bên em có đủ loại thiết bị đó, chỉ là hiện chưa cập nhật lên danh mục cho em bán online thôi, khách gọi trực tiếp hotline ${HOTLINE_PHONE} để sếp tư vấn và chốt đơn nhanh nhất nhé. Giữ giọng tự nhiên, thân thiện như nhân viên thật, không lặp lại y hệt mỗi lần
 - Khi khách muốn đặt hàng hoặc đăng ký học: đề nghị để lại SĐT và tên
 - Không bịa thêm thông tin ngoài dữ liệu đã cung cấp
 - Dùng emoji vừa phải cho thân thiện
