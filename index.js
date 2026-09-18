@@ -410,12 +410,25 @@ async function askGemini(userId, userMessage) {
     body: JSON.stringify({
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents: getHistory(userId),
-      generationConfig: { maxOutputTokens: 600, temperature: 0.7 },
+      generationConfig: {
+        maxOutputTokens: 1536,
+        temperature: 0.7,
+        // Gemini 2.5 Flash trừ "thinking tokens" (suy luận nội bộ, không hiển thị)
+        // vào chung maxOutputTokens. Đây là nguyên nhân chính khiến câu trả lời bị
+        // cắt cụt giữa chừng dù đã tăng maxOutputTokens — tắt hẳn thinking để dồn
+        // toàn bộ token cho câu trả lời thực tế (tác vụ tư vấn đơn giản, không cần).
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
   });
   const data = await response.json();
   if (data.error) { console.error("Gemini error:", data.error); throw new Error(data.error.message); }
-  const rawReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.";
+  const candidate = data.candidates?.[0];
+  const rawReply = candidate?.content?.parts?.[0]?.text || "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.";
+  if (candidate?.finishReason === "MAX_TOKENS") {
+    // Vẫn bị cắt dù đã tắt thinking + tăng token — log rõ để dễ phát hiện nếu tái diễn
+    console.warn(`⚠️  [${userId}] Phản hồi Gemini bị cắt do chạm giới hạn MAX_TOKENS.`);
+  }
   addToHistory(userId, "model", rawReply);
   return rawReply;
 }
