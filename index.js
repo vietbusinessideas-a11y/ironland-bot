@@ -117,6 +117,20 @@ const CACHE_DURATION = 30 * 60 * 1000;
 const DEFAULT_VAT_PERCENT = 8; // dùng khi ô VAT trong Sheet trống hoặc sai định dạng
 const HOTLINE_PHONE = "0907 713 137"; // Hotline sếp — dùng khi khách hỏi sản phẩm ngoài danh mục
 
+// Sản phẩm gắn cứng trực tiếp vào code (không phụ thuộc Google Sheet, luôn có
+// sẵn ngay cả khi Sheet lỗi/chưa cập nhật/còn cache). Dùng cho sản phẩm cần
+// chắc chắn bot biết ngay. Muốn thêm sản phẩm mới kiểu này thì thêm 1 object
+// vào mảng bên dưới theo đúng cấu trúc.
+const HARDCODED_PRODUCTS = [
+  {
+    name: "Z3 PRO",
+    brand: "AWAH",
+    category: "Thiết bị tời nâng hạ điện",
+    priceVnd: 16500000,
+    vatPercent: DEFAULT_VAT_PERCENT,
+  },
+];
+
 // Các đoạn tư vấn này lặp lại GIỐNG HỆT NHAU ở cột "Knowledge" của mọi sản phẩm
 // trong Sheet -> đưa vào system prompt MỘT LẦN duy nhất thay vì lặp lại theo
 // từng dòng sản phẩm, để tránh prompt phình to khi danh mục có thêm hàng.
@@ -189,12 +203,30 @@ function formatVnd(raw) {
   return Math.round(n).toLocaleString("vi-VN");
 }
 
+// Chuyển mảng HARDCODED_PRODUCTS thành đoạn text theo đúng format catalog,
+// đánh số tiếp theo từ số thứ tự đang có (startIndex) để không trùng số.
+function buildHardcodedProductsText(startIndex) {
+  let text = "";
+  let idx = startIndex;
+  for (const p of HARDCODED_PRODUCTS) {
+    idx++;
+    text += `${idx}. ${p.name}\n`;
+    if (p.brand) text += `   Thương hiệu: ${p.brand}\n`;
+    if (p.category) text += `   Loại: ${p.category}\n`;
+    text += `   Đơn giá (chưa VAT): ${formatVnd(p.priceVnd)} VND\n`;
+    text += `   VAT: ${p.vatPercent}%\n`;
+    text += "\n";
+  }
+  return { text, count: HARDCODED_PRODUCTS.length };
+}
+
 async function loadProductCatalog() {
   if (productCatalog && Date.now() - lastLoadTime < CACHE_DURATION) {
     return productCatalog;
   }
   if (!CONFIG.PRODUCT_SPREADSHEET_ID || !CONFIG.GOOGLE_CLIENT_EMAIL) {
-    return "";
+    const { text } = buildHardcodedProductsText(0);
+    return "DANH MỤC SẢN PHẨM & THIẾT BỊ AN TOÀN TRÊN CAO:\n\n" + text + GENERIC_SALES_ADVICE;
   }
   try {
     const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
@@ -247,13 +279,16 @@ async function loadProductCatalog() {
     }
 
     if (count === 0) {
-      // Không đọc được sản phẩm hợp lệ nào -> giữ nguyên catalog cũ, không ghi
-      // đè bằng danh mục rỗng, và không cập nhật lastLoadTime để lần gọi sau
-      // thử tải lại ngay (không phải đợi hết 30 phút cache).
-      console.warn("⚠️ Không tìm thấy sản phẩm hợp lệ nào trong Sheet — giữ nguyên catalog cũ.");
-      return productCatalog;
+      // Không đọc được sản phẩm hợp lệ nào trong Sheet -> vẫn đảm bảo các sản
+      // phẩm gắn cứng (HARDCODED_PRODUCTS) luôn xuất hiện, không phụ thuộc Sheet.
+      console.warn("⚠️ Không tìm thấy sản phẩm hợp lệ nào trong Sheet — dùng danh mục cũ + sản phẩm gắn cứng.");
+      const { text } = buildHardcodedProductsText(0);
+      const base = productCatalog || "DANH MỤC SẢN PHẨM & THIẾT BỊ AN TOÀN TRÊN CAO:\n\n";
+      return base.replace(GENERIC_SALES_ADVICE, "") + text + GENERIC_SALES_ADVICE;
     }
 
+    const { text: hardcodedText } = buildHardcodedProductsText(count);
+    catalog += hardcodedText;
     catalog += GENERIC_SALES_ADVICE;
     productCatalog = catalog;
     lastLoadTime = Date.now();
