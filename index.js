@@ -17,6 +17,9 @@ const CONFIG = {
   PORT: process.env.PORT || 3000,
   // Số phút chờ admin trả lời tiếp trước khi bot tự động trả lời lại
   AUTO_RESUME_MINUTES: parseInt(process.env.AUTO_RESUME_MINUTES || "15", 10),
+  // Secret để gọi endpoint /admin/add-product (ghi trực tiếp vào Sheet sản phẩm).
+  // Không đặt biến môi trường này = endpoint bị tắt hoàn toàn (an toàn mặc định).
+  ADMIN_SECRET: process.env.ADMIN_SECRET,
 };
 
 // ===================== TRẠNG THÁI BOT THEO USER =====================
@@ -423,6 +426,40 @@ async function sendTelegramText(text) {
   }
 }
 
+// ===================== GHI GOOGLE SHEETS (SẢN PHẨM) =====================
+// Ghi trực tiếp 1 dòng sản phẩm mới vào Sheet "danh sach hang hoa", đúng cấu
+// trúc cột đang dùng ở loadProductCatalog() (A=SKU,B=Tên,C=Thương hiệu,
+// D=Nhóm,E=Giá chưa VAT,F=Knowledge,...,L=VAT). Cần service account
+// (GOOGLE_CLIENT_EMAIL) có quyền Editor (không chỉ Viewer) trên Sheet này.
+async function appendProductRow(p) {
+  const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
+  const knowledge =
+    `SẢN PHẨM: ${p.name}\n` +
+    `THƯƠNG HIỆU: ${p.brand || ""}\n` +
+    `NHÓM SẢN PHẨM: ${p.category || ""}\n` +
+    `THÔNG SỐ KỸ THUẬT: ${p.specs || ""}\n` +
+    `LỢI ÍCH CHÍNH: ${p.benefits || "-"}\n` +
+    `TƯ VẤN BÁN HÀNG: ${p.salesNote || "-"}\n` +
+    `CÂU HỎI THƯỜNG GẶP: Q: Sản phẩm này dùng để làm gì? A: ${p.usage || p.category || ""} ` +
+    `Q: Có CO, CQ và hóa đơn VAT không? A: ${p.promo ? p.promo + " " : ""}Hàng đầy đủ CO, CQ và hoá đơn VAT\n` +
+    `SO SÁNH VÀ GỢI Ý: ${p.compare || "-"}`;
+
+  const row = [
+    p.sku || "-", p.name, p.brand || "", p.category || "",
+    p.price, knowledge, "", "", "", "", "", p.vat || DEFAULT_VAT_PERCENT,
+  ];
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+    range: "Trang tính1!A:L",
+    valueInputOption: "USER_ENTERED",
+    resource: { values: [row] },
+  });
+
+  // Bắt catalog tải lại ngay ở lần hỏi tiếp theo, không đợi hết cache 30 phút
+  lastLoadTime = 0;
+}
+
 // ===================== GHI GOOGLE SHEETS (LEAD) =====================
 async function appendToSheet(lead, fbUserId) {
   if (!CONFIG.SPREADSHEET_ID) return;
@@ -517,6 +554,41 @@ async function setupTelegramWebhook() {
     console.error("❌ Setup webhook error:", err.message);
   }
 }
+
+// ===================== ADMIN: THÊM SẢN PHẨM VÀO SHEET =====================
+// GET /admin/add-product?secret=...&name=...&price=...&brand=...&category=...&sku=...&vat=...&specs=...
+// Chỉ hoạt động khi có ADMIN_SECRET trong env và secret khớp. Dùng nội bộ
+// (Claude gọi thay anh khi anh nhờ thêm sản phẩm qua chat), KHÔNG chia sẻ URL này ra ngoài.
+app.get("/admin/add-product", async (req, res) => {
+  if (!CONFIG.ADMIN_SECRET) return res.status(404).send("Not found");
+  if (req.query.secret !== CONFIG.ADMIN_SECRET) return res.status(403).send("Forbidden");
+
+  const { name, price } = req.query;
+  if (!name || !price || isNaN(Number(price))) {
+    return res.status(400).json({ ok: false, error: "Thiếu 'name' hoặc 'price' không hợp lệ" });
+  }
+
+  try {
+    await appendProductRow({
+      sku: req.query.sku,
+      name,
+      brand: req.query.brand,
+      category: req.query.category,
+      price: Number(price),
+      vat: req.query.vat ? Number(req.query.vat) : undefined,
+      specs: req.query.specs,
+      benefits: req.query.benefits,
+      salesNote: req.query.salesNote,
+      usage: req.query.usage,
+      promo: req.query.promo,
+      compare: req.query.compare,
+    });
+    res.json({ ok: true, message: `Đã thêm "${name}" vào danh mục sản phẩm.` });
+  } catch (err) {
+    console.error("❌ Admin add-product error:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 // ===================== WEBHOOK FACEBOOK =====================
 app.get("/webhook", (req, res) => {
