@@ -123,16 +123,10 @@ const HOTLINE_PHONE = "0907 713 137"; // Hotline sếp — dùng khi khách hỏ
 // Sản phẩm gắn cứng trực tiếp vào code (không phụ thuộc Google Sheet, luôn có
 // sẵn ngay cả khi Sheet lỗi/chưa cập nhật/còn cache). Dùng cho sản phẩm cần
 // chắc chắn bot biết ngay. Muốn thêm sản phẩm mới kiểu này thì thêm 1 object
-// vào mảng bên dưới theo đúng cấu trúc.
-const HARDCODED_PRODUCTS = [
-  {
-    name: "Z3 PRO",
-    brand: "AWAH",
-    category: "Thiết bị tời nâng hạ điện",
-    priceVnd: 16500000,
-    vatPercent: DEFAULT_VAT_PERCENT,
-  },
-];
+// vào mảng bên dưới theo đúng cấu trúc. (Rỗng — từ khi có endpoint
+// /admin/add-product ghi thẳng vào Sheet, không cần gắn cứng nữa; AWAH Z3 PRO
+// đã chuyển qua Sheet là nguồn chính thức.)
+const HARDCODED_PRODUCTS = [];
 
 // Các đoạn tư vấn này lặp lại GIỐNG HỆT NHAU ở cột "Knowledge" của mọi sản phẩm
 // trong Sheet -> đưa vào system prompt MỘT LẦN duy nhất thay vì lặp lại theo
