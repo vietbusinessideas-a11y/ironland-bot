@@ -676,6 +676,27 @@ app.get("/admin/delete-rows", async (req, res) => {
   }
 });
 
+// GET /admin/raw-append-test?secret=... — ghi thẳng 1 dòng test với 12 giá trị
+// đơn giản (A1..L1) để cô lập xem lỗi lệch cột nằm ở values.append() nói chung
+// hay chỉ xảy ra với dữ liệu thực tế (chuỗi dài/tiếng Việt) từ appendProductRow.
+app.get("/admin/raw-append-test", async (req, res) => {
+  if (!CONFIG.ADMIN_SECRET) return res.status(404).send("Not found");
+  if (req.query.secret !== CONFIG.ADMIN_SECRET) return res.status(403).send("Forbidden");
+  try {
+    const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
+    const row = ["A1", "B1", "C1", "D1", "E1", "F1", "G1", "H1", "I1", "J1", "K1", "L1"];
+    const result = await sheets.spreadsheets.values.append({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      range: "Trang tính1!A:L",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [row] },
+    });
+    res.json({ ok: true, sentRow: row, apiResponse: result.data });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ===================== WEBHOOK FACEBOOK =====================
 app.get("/webhook", (req, res) => {
   const { "hub.mode": mode, "hub.verify_token": token, "hub.challenge": challenge } = req.query;
