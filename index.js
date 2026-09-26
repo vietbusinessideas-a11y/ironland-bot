@@ -585,6 +585,29 @@ app.get("/admin/add-product", async (req, res) => {
   }
 });
 
+// GET /admin/list-products?secret=... — liệt kê nhanh SKU/tên/giá đang có trong
+// Sheet (đọc trực tiếp từ Google Sheets API, không qua cache), dùng để Claude
+// kiểm tra nhanh khi cần debug, không phải nguồn tư vấn chính của bot.
+app.get("/admin/list-products", async (req, res) => {
+  if (!CONFIG.ADMIN_SECRET) return res.status(404).send("Not found");
+  if (req.query.secret !== CONFIG.ADMIN_SECRET) return res.status(403).send("Forbidden");
+  try {
+    const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
+    const r = await sheets.spreadsheets.values.get({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      range: "Trang tính1!A1:E500",
+    });
+    const rows = r.data.values || [];
+    const list = rows
+      .slice(1)
+      .filter(row => row[1] && row[4])
+      .map(row => ({ sku: row[0], name: row[1], brand: row[2], category: row[3], price: row[4] }));
+    res.json({ ok: true, count: list.length, products: list });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ===================== WEBHOOK FACEBOOK =====================
 app.get("/webhook", (req, res) => {
   const { "hub.mode": mode, "hub.verify_token": token, "hub.challenge": challenge } = req.query;
