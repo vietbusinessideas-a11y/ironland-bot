@@ -448,7 +448,7 @@ async function appendProductRow(p) {
     spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
     range: "Trang tính1!A:L",
     valueInputOption: "USER_ENTERED",
-    resource: { values: [row] },
+    requestBody: { values: [row] },
   });
 
   // Bắt catalog tải lại ngay ở lần hỏi tiếp theo, không đợi hết cache 30 phút
@@ -465,7 +465,7 @@ async function appendToSheet(lead, fbUserId) {
       spreadsheetId: CONFIG.SPREADSHEET_ID,
       range: "Trang tính1!A:E",
       valueInputOption: "USER_ENTERED",
-      resource: { values: [[time, lead.name, lead.phone, lead.course, fbUserId]] },
+      requestBody: { values: [[time, lead.name, lead.phone, lead.course, fbUserId]] },
     });
     console.log("✅ Sheets updated");
   } catch (err) {
@@ -634,6 +634,43 @@ app.get("/admin/debug-sheet", async (req, res) => {
       nonEmptyRowNumbers: nonEmpty.map(r => r.rowNumber),
       lastNonEmptyRows: nonEmpty.slice(-15),
     });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /admin/delete-rows?secret=...&rows=22,23,24 — xoá hẳn các dòng lỗi (1-indexed,
+// đúng số dòng hiển thị trên Google Sheets) khỏi Sheet sản phẩm. Dùng để dọn rác
+// do bug ghi sai gây ra, KHÔNG dùng cho việc khác.
+app.get("/admin/delete-rows", async (req, res) => {
+  if (!CONFIG.ADMIN_SECRET) return res.status(404).send("Not found");
+  if (req.query.secret !== CONFIG.ADMIN_SECRET) return res.status(403).send("Forbidden");
+  const rowNumbers = String(req.query.rows || "")
+    .split(",")
+    .map(s => parseInt(s.trim(), 10))
+    .filter(n => !isNaN(n) && n > 0)
+    .sort((a, b) => b - a); // xoá từ dưới lên để không lệch số dòng khi xoá dần
+  if (rowNumbers.length === 0) {
+    return res.status(400).json({ ok: false, error: "Thiếu param 'rows' (vd: rows=22,23,24)" });
+  }
+  try {
+    const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      fields: "sheets(properties(sheetId,title))",
+    });
+    const sheetId = meta.data.sheets.find(s => s.properties.title === "Trang tính1").properties.sheetId;
+    const requests = rowNumbers.map(n => ({
+      deleteDimension: {
+        range: { sheetId, dimension: "ROWS", startIndex: n - 1, endIndex: n },
+      },
+    }));
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      requestBody: { requests },
+    });
+    lastLoadTime = 0;
+    res.json({ ok: true, deletedRows: rowNumbers });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
