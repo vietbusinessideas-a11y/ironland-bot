@@ -439,17 +439,33 @@ async function appendProductRow(p) {
     `Q: Có CO, CQ và hóa đơn VAT không? A: ${p.promo ? p.promo + " " : ""}Hàng đầy đủ CO, CQ và hoá đơn VAT\n` +
     `SO SÁNH VÀ GỢI Ý: ${p.compare || "-"}`;
 
-  const row = [
-    p.sku || "-", p.name, p.brand || "", p.category || "",
-    p.price, knowledge, "", "", "", "", "", p.vat || DEFAULT_VAT_PERCENT,
-  ];
+  // QUAN TRỌNG: cột G-K luôn trống ở MỌI dòng trong sheet này -> nếu ghi bằng
+  // 1 lệnh append với range "A:L", Google Sheets API hiểu nhầm đây là 2 bảng
+  // tách rời (A:F và L) do khoảng trống liên tục ở G-K, và append lệch hẳn
+  // sang các cột M trở đi thay vì A. Khắc phục bằng cách tách làm 2 bước ghi
+  // KHÔNG có khoảng trống ở giữa: (1) append A:F trước để xác định đúng dòng
+  // mới, (2) update thẳng đúng ô L của dòng đó cho giá trị VAT.
+  const rowA_F = [p.sku || "-", p.name, p.brand || "", p.category || "", p.price, knowledge];
 
-  await sheets.spreadsheets.values.append({
+  const appendResult = await sheets.spreadsheets.values.append({
     spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
-    range: "Trang tính1!A:L",
+    range: "Trang tính1!A:F",
     valueInputOption: "USER_ENTERED",
-    requestBody: { values: [row] },
+    requestBody: { values: [rowA_F] },
   });
+
+  const updatedRange = appendResult.data.updates.updatedRange; // vd "'Trang tính1'!A21:F21"
+  const match = updatedRange.match(/![A-Z]+(\d+):/);
+  const rowNumber = match ? parseInt(match[1], 10) : null;
+
+  if (rowNumber) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      range: `Trang tính1!L${rowNumber}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[p.vat || DEFAULT_VAT_PERCENT]] },
+    });
+  }
 
   // Bắt catalog tải lại ngay ở lần hỏi tiếp theo, không đợi hết cache 30 phút
   lastLoadTime = 0;
