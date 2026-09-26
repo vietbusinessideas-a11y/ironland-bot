@@ -595,14 +595,13 @@ app.get("/admin/list-products", async (req, res) => {
     const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
     const r = await sheets.spreadsheets.values.get({
       spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
-      range: "Trang tính1!A1:E500",
+      range: "Trang tính1!A1:E5000",
     });
     const rows = r.data.values || [];
     const list = rows
-      .slice(1)
-      .filter(row => row[1] && row[4])
-      .map(row => ({ sku: row[0], name: row[1], brand: row[2], category: row[3], price: row[4] }));
-    res.json({ ok: true, count: list.length, products: list });
+      .map((row, i) => ({ rowNumber: i + 1, sku: row[0], name: row[1], brand: row[2], category: row[3], price: row[4] }))
+      .filter(row => row.name && row.price);
+    res.json({ ok: true, totalRowsScanned: rows.length, count: list.length, products: list });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
