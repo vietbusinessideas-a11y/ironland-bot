@@ -607,6 +607,38 @@ app.get("/admin/list-products", async (req, res) => {
   }
 });
 
+// GET /admin/debug-sheet?secret=... — soi toàn bộ sheet (kể cả cột F-L), lấy
+// metadata thật của sheet (số dòng/cột thực tế Google đang cấp phát) để tìm
+// đúng vị trí các dòng append "mất tích" sau khi API báo append thành công.
+app.get("/admin/debug-sheet", async (req, res) => {
+  if (!CONFIG.ADMIN_SECRET) return res.status(404).send("Not found");
+  if (req.query.secret !== CONFIG.ADMIN_SECRET) return res.status(403).send("Forbidden");
+  try {
+    const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      fields: "sheets(properties(sheetId,title,gridProperties))",
+    });
+    const full = await sheets.spreadsheets.values.get({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      range: "Trang tính1!A1:L20000",
+    });
+    const rows = full.data.values || [];
+    const nonEmpty = rows
+      .map((row, i) => ({ rowNumber: i + 1, row }))
+      .filter(r => r.row.some(cell => cell !== undefined && cell !== ""));
+    res.json({
+      ok: true,
+      sheetsMeta: meta.data.sheets,
+      totalRowsInResponse: rows.length,
+      nonEmptyRowNumbers: nonEmpty.map(r => r.rowNumber),
+      lastNonEmptyRows: nonEmpty.slice(-15),
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ===================== WEBHOOK FACEBOOK =====================
 app.get("/webhook", (req, res) => {
   const { "hub.mode": mode, "hub.verify_token": token, "hub.challenge": challenge } = req.query;
