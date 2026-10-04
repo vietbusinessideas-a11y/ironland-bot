@@ -4345,5 +4345,419 @@
 "price": 29580000,
 "vat": 8,
 "specs": "ĐVT: Bộ. Thành phần: AVAO + VERTEX VENT + ABSORBICA-Y MGO 80 + GRILLON 2M + OK TL ×2"
+},
+{
+"sku": "XDA9516L",
+"name": "Full Body Safety Harness XDA9516L",
+"brand": "Xinda",
+"category": "Đai bảo hộ & ghế treo",
+"price": 2500000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDA9516S",
+"name": "Full Body Safety Harness XDA9516S",
+"brand": "Xinda",
+"category": "Đai bảo hộ & ghế treo",
+"price": 2500000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDA9585",
+"name": "Full Body Safety Harness XDA9585",
+"brand": "Xinda",
+"category": "Đai bảo hộ & ghế treo",
+"price": 2160000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HH9373GL",
+"name": "Grappling rope HH9373GL",
+"brand": "Xinda",
+"category": "Dây thừng & dây phụ",
+"price": 150000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDPJ36SSSDB",
+"name": "Fall arresting lanyard-Double rope with two big hooks+Buffer Bag XDPJ36SSSDB",
+"brand": "Xinda",
+"category": "Lanyard & dây định vị",
+"price": 760000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "H9849DLHSD",
+"name": "Landyard adjust H9849DLHSD",
+"brand": "Xinda",
+"category": "Lanyard & dây định vị",
+"price": 2100000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDD931360",
+"name": "Lanyard(60cm) XDD931360",
+"brand": "Xinda",
+"category": "Lanyard & dây định vị",
+"price": 175000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HH8122NGG",
+"name": "Carabiner (Screw lock) HH8122NGG",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 330000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HH8122TNSGG",
+"name": "Carabiner (Triple lock) HH8122TNSGG",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 440000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XD8131NBH",
+"name": "Screw Gate Steel Carabiner XD8131NBH",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 380000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XD8122NBlack",
+"name": "Screw lock Carabiner XD8122NBlack",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 270000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XD8122NBlue",
+"name": "Screw lock Carabiner XD8122NBlue",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 270000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XD8122NGH",
+"name": "Screw lock Carabiner XD8122NGH",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 270000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XD8122NOrange",
+"name": "Screw lock Carabiner XD8122NOrange",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 270000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XD8122NRed",
+"name": "Screw lock Carabiner XD8122NRed",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 270000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XD8122NSilverR",
+"name": "Screw lock Carabiner XD8122NSilverR",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 270000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDQ9719NSY",
+"name": "Steel Carabiner (Screw lock) XDQ9719NSY",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 220000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HH8658TNS",
+"name": "Swivel Triple- action Auto-lock Carabiner HH8658TNS",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 2800000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "H9757",
+"name": "Tool Carabiner H9757",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 850000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "H9757L",
+"name": "Tool Carabiner H9757L",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 1110000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XD8121TNSGHOJ NGH",
+"name": "Triple Lock Carabiner XD8121TNSGHOJ NGH",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 330000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XD8122TNSGHO J",
+"name": "Triple Lock Carabiner XD8122TNSGHO J",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 330000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "AL8634FHSJ(anti-panic)",
+"name": "Al Nars Sheild Descender AL8634FHSJ(anti-panic)",
+"brand": "Xinda",
+"category": "Thiết bị hạ (Descender) & hãm",
+"price": 4700000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "TPSS03LOJ",
+"name": "Left Hand Ascender TPSS03LOJ",
+"brand": "Xinda",
+"category": "Thiết bị lên (Ascender) & foot loop",
+"price": 920000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "TPSS03ROJ",
+"name": "Right Hand Ascender TPSS03ROJ",
+"brand": "Xinda",
+"category": "Thiết bị lên (Ascender) & foot loop",
+"price": 920000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HBD02",
+"name": "（FTA） Foot loop HBD02",
+"brand": "Xinda",
+"category": "Thiết bị lên (Ascender) & foot loop",
+"price": 510000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDQ6608",
+"name": "Fall Arrester XDQ6608",
+"brand": "Xinda",
+"category": "Chống rơi (Fall arrest / Backup)",
+"price": 1300000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDQ9640",
+"name": "Fall Arrester XDQ9640",
+"brand": "Xinda",
+"category": "Chống rơi (Fall arrest / Backup)",
+"price": 750000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDT103240",
+"name": "Fall Arrester HH9769TNGG HH9375GLDL HHZSQ06 XDT103240",
+"brand": "Xinda",
+"category": "Chống rơi (Fall arrest / Backup)",
+"price": 10700000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HHPU01GL",
+"name": "Double Pulley HHPU01GL",
+"brand": "Xinda",
+"category": "Ròng rọc (Pulley) & hệ kéo",
+"price": 2000000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HH9755TNGG",
+"name": "Pulley Carabiner (Auto lock) HH9755TNGG",
+"brand": "Xinda",
+"category": "Ròng rọc (Pulley) & hệ kéo",
+"price": 1300000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HH9782TNGG",
+"name": "Pulley Carabiner (Auto lock) HH9782TNGG",
+"brand": "Xinda",
+"category": "Ròng rọc (Pulley) & hệ kéo",
+"price": 1620000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HH8661",
+"name": "Open Swivel HH8661",
+"brand": "Xinda",
+"category": "Neo, sling & rigging",
+"price": 2250000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDPJ191YH143",
+"name": "Mat XDPJ191YH143",
+"brand": "Xinda",
+"category": "Bảo vệ dây & cạnh",
+"price": 900000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDPJ191YH69",
+"name": "Mat XDPJ191YH69",
+"brand": "Xinda",
+"category": "Bảo vệ dây & cạnh",
+"price": 540000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HST08L",
+"name": "Full finger climbing gloves HST08L",
+"brand": "Xinda",
+"category": "Găng tay, bảo hộ cá nhân & phụ kiện khác",
+"price": 1200000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HST08XL",
+"name": "Full finger climbing gloves HST08XL",
+"brand": "Xinda",
+"category": "Găng tay, bảo hộ cá nhân & phụ kiện khác",
+"price": 1200000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HST01L",
+"name": "Full finger gloves HST01L",
+"brand": "Xinda",
+"category": "Găng tay, bảo hộ cá nhân & phụ kiện khác",
+"price": 870000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HST01M",
+"name": "Full finger gloves HST01M",
+"brand": "Xinda",
+"category": "Găng tay, bảo hộ cá nhân & phụ kiện khác",
+"price": 870000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "H9669WB/WH",
+"name": "Helmet H9669WB/WH",
+"brand": "Xinda",
+"category": "Mũ bảo hộ & phụ kiện mũ",
+"price": 1040000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "H9669YH",
+"name": "Helmet H9669YH",
+"brand": "Xinda",
+"category": "Mũ bảo hộ & phụ kiện mũ",
+"price": 1040000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "WS1753",
+"name": "SAFETY ROPE WS1753",
+"brand": "Xinda",
+"category": "Dây thừng & dây phụ",
+"price": 435000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "BM-GLR",
+"name": "Stainless-Steel Wire Strap (Thimble) BM-GLR",
+"brand": "Xinda",
+"category": "Neo, sling & rigging",
+"price": 1490000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDQ9719TNSY",
+"name": "Steel Carabiner (Auto lock) XDQ9719TNSY",
+"brand": "Xinda",
+"category": "Carabiner & móc nối",
+"price": 350000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "HPU02GRH",
+"name": "Single Pulley HPU02GRH",
+"brand": "Xinda",
+"category": "Ròng rọc (Pulley) & hệ kéo",
+"price": 1280000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
+},
+{
+"sku": "XDS9852200",
+"name": "Anchor cable XDS9852200",
+"brand": "Xinda",
+"category": "Neo, sling & rigging",
+"price": 550000,
+"vat": 8,
+"specs": "ĐVT: Cái. Xuất xứ: TQ"
 }
 ]
