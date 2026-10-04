@@ -484,7 +484,7 @@ async function appendProductRow(p) {
       spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
       range: `Trang tính1!L${rowNumber}`,
       valueInputOption: "USER_ENTERED",
-      requestBody: { values: [[p.vat || DEFAULT_VAT_PERCENT]] },
+      requestBody: { values: [[`${p.vat || DEFAULT_VAT_PERCENT}%`]] }, // ghi dạng '8%' (ô cột L định dạng Percent: ghi số 8 sẽ thành 800%)
     });
   }
 
@@ -668,12 +668,34 @@ app.get("/admin/bulk-import", async (req, res) => {
       spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
       range: `Trang tính1!L${r1}:L${r2}`,
       valueInputOption: "USER_ENTERED",
-      requestBody: { values: todo.map(p => [p.vat || DEFAULT_VAT_PERCENT]) },
+      requestBody: { values: todo.map(p => [`${p.vat || DEFAULT_VAT_PERCENT}%`]) },
     });
     lastLoadTime = 0;
     res.json({ ok: true, total: all.length, from, batch: batch.length, added: todo.length, rows: `${r1}-${r2}`, next: from + count });
   } catch (err) {
     console.error("❌ bulk-import error:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /admin/fix-vat?secret=...&from=21&to=528 — ghi lại cột L (VAT) thành "8%" cho
+// khoảng dòng chỉ định (sửa lỗi ghi số 8 bị Sheets hiểu thành 800%).
+app.get("/admin/fix-vat", async (req, res) => {
+  if (!CONFIG.ADMIN_SECRET) return res.status(404).send("Not found");
+  if (req.query.secret !== CONFIG.ADMIN_SECRET) return res.status(403).send("Forbidden");
+  try {
+    const from = parseInt(req.query.from, 10), to = parseInt(req.query.to, 10);
+    if (!from || !to || to < from || to - from > 2000) return res.status(400).json({ ok: false, error: "from/to không hợp lệ" });
+    const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      range: `Trang tính1!L${from}:L${to}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: Array.from({ length: to - from + 1 }, () => [`${DEFAULT_VAT_PERCENT}%`]) },
+    });
+    lastLoadTime = 0;
+    res.json({ ok: true, fixed: `${from}-${to}` });
+  } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
