@@ -1,5 +1,7 @@
 const express = require("express");
 const { google } = require("googleapis");
+const fs = require("fs");
+const path = require("path");
 const app = express();
 app.use(express.json());
 
@@ -229,7 +231,7 @@ async function loadProductCatalog() {
     const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
-      range: "Trang tính1!A1:L500",
+      range: "Trang tính1!A1:L3000", // nâng từ 500 -> 3000 dòng vì danh mục đã vượt 500 sau khi import Master List
     });
     const rows = res.data.values || [];
     if (rows.length < 2) return productCatalog;
@@ -265,7 +267,8 @@ async function loadProductCatalog() {
       if (category) catalog += `   Loại: ${category}\n`;
       if (sku && sku !== "-") catalog += `   SKU: ${sku}\n`;
       catalog += `   Đơn giá (chưa VAT): ${formatVnd(priceRaw)} VND\n`;
-      catalog += `   VAT: ${vatPercent !== null ? vatPercent + "%" : DEFAULT_VAT_PERCENT + "% (mặc định)"}\n`;
+      // Chỉ in dòng VAT khi KHÁC mặc định, để prompt gọn khi danh mục hàng trăm mã
+      if (vatPercent !== null && vatPercent !== DEFAULT_VAT_PERCENT) catalog += `   VAT: ${vatPercent}%\n`;
       if (specs) catalog += `   Thông số: ${specs}\n`;
       if (!isGenericVatNote(vatNote)) catalog += `   Ghi chú: ${vatNote}\n`;
       catalog += "\n";
@@ -615,6 +618,62 @@ app.get("/admin/add-product", async (req, res) => {
     res.json({ ok: true, message: `Đã thêm "${name}" vào danh mục sản phẩm.` });
   } catch (err) {
     console.error("❌ Admin add-product error:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /admin/bulk-import?secret=...&from=0&count=100[&dry=1] — nhập hàng loạt từ
+// file products-import.json (nằm cạnh index.js). Bỏ qua SKU đã có trong Sheet nên
+// chạy lại nhiều lần vẫn an toàn. Ghi theo lô: append A:F cả lô, rồi update cột L
+// (VAT) đúng khoảng dòng vừa ghi (tránh lỗi Sheets lệch cột do G-K trống).
+app.get("/admin/bulk-import", async (req, res) => {
+  if (!CONFIG.ADMIN_SECRET) return res.status(404).send("Not found");
+  if (req.query.secret !== CONFIG.ADMIN_SECRET) return res.status(403).send("Forbidden");
+  try {
+    const all = JSON.parse(fs.readFileSync(path.join(__dirname, "products-import.json"), "utf8"));
+    const from = parseInt(req.query.from || "0", 10);
+    const count = parseInt(req.query.count || "100", 10);
+    const batch = all.slice(from, from + count);
+    const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
+    const cur = await sheets.spreadsheets.values.get({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      range: "Trang tính1!A1:A5000",
+    });
+    const have = new Set((cur.data.values || []).map(r => (r[0] || "").trim().toUpperCase()));
+    const todo = batch.filter(p => !have.has((p.sku || "").trim().toUpperCase()));
+    if (req.query.dry) {
+      return res.json({ ok: true, dry: true, total: all.length, from, batch: batch.length, wouldAdd: todo.length });
+    }
+    if (todo.length === 0) {
+      return res.json({ ok: true, total: all.length, from, batch: batch.length, added: 0, next: from + count });
+    }
+    const rows = todo.map(p => {
+      const knowledge =
+        `SẢN PHẨM: ${p.name}\nTHƯƠNG HIỆU: ${p.brand || ""}\nNHÓM SẢN PHẨM: ${p.category || ""}\n` +
+        `THÔNG SỐ KỸ THUẬT: ${p.specs || ""}\nLỢI ÍCH CHÍNH: -\nTƯ VẤN BÁN HÀNG: -\n` +
+        `CÂU HỎI THƯỜNG GẶP: Q: Sản phẩm này dùng để làm gì? A: ${p.category || ""} ` +
+        `Q: Có CO, CQ và hóa đơn VAT không? A: Hàng đầy đủ CO, CQ và hoá đơn VAT\nSO SÁNH VÀ GỢI Ý: -`;
+      return [p.sku || "-", p.name, p.brand || "", p.category || "", p.price, knowledge];
+    });
+    const ap = await sheets.spreadsheets.values.append({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      range: "Trang tính1!A:F",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: rows },
+    });
+    const m = ap.data.updates.updatedRange.match(/!A(\d+):F(\d+)/);
+    if (!m) throw new Error("Không đọc được updatedRange: " + ap.data.updates.updatedRange);
+    const r1 = parseInt(m[1], 10), r2 = parseInt(m[2], 10);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      range: `Trang tính1!L${r1}:L${r2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: todo.map(p => [p.vat || DEFAULT_VAT_PERCENT]) },
+    });
+    lastLoadTime = 0;
+    res.json({ ok: true, total: all.length, from, batch: batch.length, added: todo.length, rows: `${r1}-${r2}`, next: from + count });
+  } catch (err) {
+    console.error("❌ bulk-import error:", err.message);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
