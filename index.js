@@ -142,7 +142,7 @@ LƯU Ý CHUNG KHI TƯ VẤN THIẾT BỊ AN TOÀN TRÊN CAO (áp dụng mọi s�
 - Ưu tiên đề xuất sản phẩm theo đúng mục đích sử dụng thực tế của khách; có thể đề xuất
   sản phẩm tương đương hoặc cao cấp hơn nếu khách cần tải trọng lớn hơn.
 - Mặc định thiết bị có đầy đủ CO, CQ và hoá đơn VAT (trừ khi có ghi chú riêng khác ở từng sản phẩm).
-- Nếu là thiết bị chống rơi/descender, có thể so sánh Sirius, Spark, RD2; nếu là thiết bị
+- Nếu là thiết bị chống rơi/descender, có thể so sánh Sirius, Spark; nếu là thiết bị
   trợ lực leo dây, có thể so sánh các dòng AWAH Z3.
 `;
 
