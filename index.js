@@ -18,7 +18,7 @@ const CONFIG = {
   GOOGLE_PRIVATE_KEY: (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
   PORT: process.env.PORT || 3000,
   // Số phút chờ admin trả lời tiếp trước khi bot tự động trả lời lại
-  AUTO_RESUME_MINUTES: parseInt(process.env.AUTO_RESUME_MINUTES || "15", 10),
+  AUTO_RESUME_MINUTES: parseInt(process.env.AUTO_RESUME_MINUTES || "10", 10),
   // Secret để gọi endpoint /admin/add-product (ghi trực tiếp vào Sheet sản phẩm).
   // Không đặt biến môi trường này = endpoint bị tắt hoàn toàn (an toàn mặc định).
   ADMIN_SECRET: process.env.ADMIN_SECRET,
@@ -66,17 +66,22 @@ setInterval(() => {
 }, 15 * 60 * 1000);
 
 // Admin vừa tự trả lời thủ công trong Messenger -> tạm dừng bot cho khách này
+// Quy tắc: mỗi lần admin trả lời -> bot im lặng đúng AUTO_RESUME_MINUTES (10 phút) kể từ
+// tin nhắn CUỐI CÙNG của admin. Admin trả lời tiếp thì đồng hồ tính lại từ đầu.
 function handleAdminManualReply(customerId) {
   if (botDisabledUsers.has(customerId)) return; // đã tắt vĩnh viễn rồi, khỏi cần lo
   const existing = autoPaused.get(customerId);
   if (existing?.timer) clearTimeout(existing.timer);
   const wasAlreadyPaused = !!existing;
-  autoPaused.set(customerId, { timer: null, pending: [] });
+  const pending = existing?.pending || [];
+  const entry = { timer: null, pending, lastAdminAt: Date.now() };
+  entry.timer = setTimeout(() => resumeAfterSilence(customerId), CONFIG.AUTO_RESUME_MINUTES * 60 * 1000);
+  autoPaused.set(customerId, entry);
   console.log(`✋ Admin trả lời thủ công cho ${customerId} — tạm dừng bot tự động.`);
   if (!wasAlreadyPaused) {
     sendTelegramText(
       `✋ Phát hiện bạn *tự trả lời* khách \`${customerId}\` trong Messenger — bot đã *tạm dừng* cho khách này.\n` +
-      `Nếu khách nhắn tiếp mà bạn không trả lời trong *${CONFIG.AUTO_RESUME_MINUTES} phút*, bot sẽ tự động trả lời lại.`
+      `Nếu sau *${CONFIG.AUTO_RESUME_MINUTES} phút* bạn không trả lời thêm, bot sẽ tự động trả lời lại các tin khách nhắn trong lúc chờ.`
     );
   }
 }
@@ -847,11 +852,15 @@ app.post("/webhook", async (req, res) => {
       // Facebook gửi "echo" cho MỌI tin nhắn Page gửi ra (cả bot lẫn admin gõ tay)
       if (event.message?.is_echo) {
         const mid = event.message.mid;
-        if (!wasSentByBot(mid)) {
-          // mid này không phải do bot gửi -> admin vừa tự trả lời thủ công
-          const customerId = event.recipient?.id;
-          if (customerId) handleAdminManualReply(customerId);
-        }
+        const customerId = event.recipient?.id;
+        // Đợi 2 giây trước khi phân loại: echo của chính bot đôi khi về TRƯỚC khi API gửi
+        // kịp trả mid -> tránh nhầm tin của bot thành tin của admin
+        setTimeout(() => {
+          if (!wasSentByBot(mid) && customerId) {
+            // mid này không phải do bot gửi -> admin vừa tự trả lời thủ công
+            handleAdminManualReply(customerId);
+          }
+        }, 2000);
         continue;
       }
 
@@ -890,12 +899,18 @@ app.post("/webhook", async (req, res) => {
       // rồi mới tự động trả lời (gộp các tin nhắn khách gửi trong lúc chờ)
       const paused = autoPaused.get(senderId);
       if (paused) {
-        console.log(`⏸️  [${senderId}] đang tạm dừng (admin vừa trả lời) — xếp hàng chờ.`);
-        paused.pending.push(messageText);
+        const elapsed = Date.now() - paused.lastAdminAt;
+        if (elapsed < CONFIG.AUTO_RESUME_MINUTES * 60 * 1000) {
+          // Chưa đủ 10 phút kể từ tin cuối của admin -> bot im, xếp hàng chờ
+          // (timer đã đặt sẵn lúc admin trả lời, KHÔNG reset khi khách nhắn thêm)
+          console.log(`⏸️  [${senderId}] admin vừa trả lời ${Math.round(elapsed / 1000)}s trước — bot im, xếp hàng chờ.`);
+          paused.pending.push(messageText);
+          continue;
+        }
+        // Đã quá hạn (phòng khi timer chưa kịp chạy) -> bỏ trạng thái dừng, trả lời bình thường
         if (paused.timer) clearTimeout(paused.timer);
-        paused.timer = setTimeout(() => resumeAfterSilence(senderId), CONFIG.AUTO_RESUME_MINUTES * 60 * 1000);
-        autoPaused.set(senderId, paused);
-        continue;
+        autoPaused.delete(senderId);
+        if (paused.pending.length) messageText = paused.pending.join("\n") + "\n" + messageText;
       }
 
       // 👍 Khách gửi sticker/icon (like, emoji dán nhanh...) — chỉ cần cảm ơn
