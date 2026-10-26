@@ -697,6 +697,50 @@ app.get("/admin/bulk-import", async (req, res) => {
   }
 });
 
+// GET /admin/update-prices?secret=...[&dry=1][&brand=Xinda] — cập nhật GIÁ (cột E) tại chỗ
+// theo file price-updates.json ({ "SKU": giáMới }) nằm cạnh index.js. Chỉ sửa các dòng có
+// SKU khớp (cột A) và đúng thương hiệu (cột C, mặc định Xinda) và giá khác giá mới.
+// dry=1: chỉ liệt kê thay đổi, không ghi. Chạy lại nhiều lần vẫn an toàn.
+app.get("/admin/update-prices", async (req, res) => {
+  if (!CONFIG.ADMIN_SECRET) return res.status(404).send("Not found");
+  if (req.query.secret !== CONFIG.ADMIN_SECRET) return res.status(403).send("Forbidden");
+  try {
+    const upd = JSON.parse(fs.readFileSync(path.join(__dirname, "price-updates.json"), "utf8"));
+    const map = new Map(Object.entries(upd).map(([k, v]) => [k.trim().toUpperCase(), Number(v)]));
+    const brand = (req.query.brand || "Xinda").trim().toLowerCase();
+    const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
+    const cur = await sheets.spreadsheets.values.get({
+      spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+      range: "Trang tính1!A1:E5000",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const rows = cur.data.values || [];
+    const changes = [];
+    rows.forEach((r, i) => {
+      const sku = String(r[0] || "").trim().toUpperCase();
+      if (!map.has(sku)) return;
+      if (String(r[2] || "").trim().toLowerCase() !== brand) return;
+      const oldP = Number(String(r[4] ?? "").replace(/[^\d.]/g, ""));
+      const newP = map.get(sku);
+      if (oldP !== newP) changes.push({ row: i + 1, sku, old: oldP, new: newP });
+    });
+    if (!req.query.dry && changes.length) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
+        requestBody: {
+          valueInputOption: "USER_ENTERED",
+          data: changes.map(c => ({ range: `Trang tính1!E${c.row}`, values: [[c.new]] })),
+        },
+      });
+      lastLoadTime = 0; // buộc nạp lại danh mục
+    }
+    res.json({ ok: true, dry: !!req.query.dry, inFile: map.size, changed: changes.length, sample: changes.slice(0, 15) });
+  } catch (err) {
+    console.error("❌ update-prices error:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // GET /admin/fix-vat?secret=...&from=21&to=528 — ghi lại cột L (VAT) thành "8%" cho
 // khoảng dòng chỉ định (sửa lỗi ghi số 8 bị Sheets hiểu thành 800%).
 app.get("/admin/fix-vat", async (req, res) => {
