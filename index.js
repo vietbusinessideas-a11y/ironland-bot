@@ -697,9 +697,9 @@ app.get("/admin/bulk-import", async (req, res) => {
   }
 });
 
-// GET /admin/update-prices?secret=...[&dry=1][&brand=Xinda] — cập nhật GIÁ (cột E) tại chỗ
+// GET /admin/update-prices?secret=...[&dry=1][&brand=...] — cập nhật GIÁ (cột E) tại chỗ
 // theo file price-updates.json ({ "SKU": giáMới }) nằm cạnh index.js. Chỉ sửa các dòng có
-// SKU khớp (cột A) và đúng thương hiệu (cột C, mặc định Xinda) và giá khác giá mới.
+// SKU khớp (cột A) và đúng thương hiệu (cột C, chỉ lọc khi có tham số brand) và giá khác giá mới.
 // dry=1: chỉ liệt kê thay đổi, không ghi. Chạy lại nhiều lần vẫn an toàn.
 app.get("/admin/update-prices", async (req, res) => {
   if (!CONFIG.ADMIN_SECRET) return res.status(404).send("Not found");
@@ -707,7 +707,7 @@ app.get("/admin/update-prices", async (req, res) => {
   try {
     const upd = JSON.parse(fs.readFileSync(path.join(__dirname, "price-updates.json"), "utf8"));
     const map = new Map(Object.entries(upd).map(([k, v]) => [k.trim().toUpperCase(), Number(v)]));
-    const brand = (req.query.brand || "Xinda").trim().toLowerCase();
+    const brand = (req.query.brand || "").trim().toLowerCase(); // rỗng = mọi thương hiệu
     const sheets = google.sheets({ version: "v4", auth: getGoogleAuth() });
     const cur = await sheets.spreadsheets.values.get({
       spreadsheetId: CONFIG.PRODUCT_SPREADSHEET_ID,
@@ -719,7 +719,7 @@ app.get("/admin/update-prices", async (req, res) => {
     rows.forEach((r, i) => {
       const sku = String(r[0] || "").trim().toUpperCase();
       if (!map.has(sku)) return;
-      if (String(r[2] || "").trim().toLowerCase() !== brand) return;
+      if (brand && String(r[2] || "").trim().toLowerCase() !== brand) return;
       const oldP = Number(String(r[4] ?? "").replace(/[^\d.]/g, ""));
       const newP = map.get(sku);
       if (oldP !== newP) changes.push({ row: i + 1, sku, old: oldP, new: newP });
