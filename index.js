@@ -540,6 +540,7 @@ const GEMINI_MAIN = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const GEMINI_FALLBACK = process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash";
 const GEMINI_MODELS = [GEMINI_MAIN, GEMINI_MAIN, GEMINI_FALLBACK];
 let lastGeminiAlertAt = 0;
+let lastWebhookAlertAt = 0;
 async function callGemini(systemPrompt, contents) {
   let lastErr;
   for (let attempt = 0; attempt < GEMINI_MODELS.length; attempt++) {
@@ -794,6 +795,54 @@ app.get("/admin/update-prices", async (req, res) => {
   }
 });
 
+// GET /admin/test-gemini?secret=...[&model=...][&q=...] — chạy thử đúng đường gọi của bot (system prompt thật
+// + 1 câu hỏi) và trả về kết quả/lỗi chi tiết, để chẩn đoán "hệ thống đang bận" mà không cần xem log.
+app.get("/admin/test-gemini", async (req, res) => {
+  if (!CONFIG.ADMIN_SECRET) return res.status(404).send("Not found");
+  if (req.query.secret !== CONFIG.ADMIN_SECRET) return res.status(403).send("Forbidden");
+  const t0 = Date.now();
+  const out = { models: GEMINI_MODELS, keySet: !!CONFIG.GEMINI_API_KEY };
+  try {
+    const sp = await buildSystemPrompt();
+    out.promptChars = sp.length;
+    const q = req.query.q || "Giá Beal Air Stop bao nhiêu?";
+    const models = req.query.model ? [String(req.query.model)] : [GEMINI_MAIN, GEMINI_FALLBACK];
+    out.results = [];
+    for (const model of models) {
+      const t1 = Date.now();
+      try {
+        const r = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: AbortSignal.timeout(45000),
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: sp }] },
+              contents: [{ role: "user", parts: [{ text: String(q) }] }],
+              generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
+            }),
+          }
+        );
+        const j = await r.json();
+        out.results.push({
+          model, http: r.status, ms: Date.now() - t1,
+          error: j.error || null,
+          finishReason: j.candidates?.[0]?.finishReason,
+          usage: j.usageMetadata,
+          reply: (j.candidates?.[0]?.content?.parts?.[0]?.text || "").slice(0, 300),
+        });
+      } catch (e) {
+        out.results.push({ model, ms: Date.now() - t1, exception: e.message });
+      }
+    }
+  } catch (e) {
+    out.setupError = e.message;
+  }
+  out.totalMs = Date.now() - t0;
+  res.json(out);
+});
+
 // GET /admin/fix-vat?secret=...&from=21&to=528 — ghi lại cột L (VAT) thành "8%" cho
 // khoảng dòng chỉ định (sửa lỗi ghi số 8 bị Sheets hiểu thành 800%).
 app.get("/admin/fix-vat", async (req, res) => {
@@ -1028,7 +1077,11 @@ app.post("/webhook", async (req, res) => {
         }
         await sendMessage(senderId, cleanReply(rawReply));
       } catch (err) {
-        console.error("❌ Error:", err.message);
+        console.error("❌ Error:", err.stack || err.message);
+        if (Date.now() - lastWebhookAlertAt > 5 * 60 * 1000) {
+          lastWebhookAlertAt = Date.now();
+          sendTelegramText(`⚠️ Lỗi khi trả lời khách ${senderId}: ${String(err.message || err).slice(0, 400)}`).catch(() => {});
+        }
         await sendMessage(senderId, "Xin lỗi, hệ thống đang bận. Vui lòng thử lại sau ít phút nhé! 🙏");
       }
     }
