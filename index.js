@@ -531,33 +531,83 @@ async function appendToSheet(lead, fbUserId) {
 }
 
 // ===================== GỌI GEMINI API =====================
+// Gọi Gemini có thử lại: lỗi quá tải/giới hạn (429, 500, 503, 504) hoặc lỗi mạng sẽ tự thử lại
+// tối đa 3 lần (chờ 1.5s, 4s), lần cuối đổi sang model dự phòng gemini-2.5-flash-lite.
+// Dòng 2.5 Google đang "giới hạn truy cập để đảm bảo dung lượng" nên dễ báo bận -> lần 3 dùng
+// model thế hệ mới (3.5 flash-lite). Có thể ghi đè bằng biến môi trường GEMINI_FALLBACK_MODEL.
+const GEMINI_FALLBACK = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash-lite";
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash", GEMINI_FALLBACK];
+let lastGeminiAlertAt = 0;
+async function callGemini(systemPrompt, contents) {
+  let lastErr;
+  for (let attempt = 0; attempt < GEMINI_MODELS.length; attempt++) {
+    const model = GEMINI_MODELS[attempt];
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(45000),
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: systemPrompt }] },
+            contents,
+            generationConfig: model.startsWith("gemini-2.5")
+              ? {
+                  maxOutputTokens: 1536,
+                  temperature: 0.7,
+                  // Tắt thinking để dồn toàn bộ token cho câu trả lời (tránh bị cắt cụt)
+                  thinkingConfig: { thinkingBudget: 0 },
+                }
+              : {
+                  // Model dự phòng thế hệ 3.x: không ép thinkingBudget (cách cấu hình khác), nới token
+                  maxOutputTokens: 4096,
+                  temperature: 0.7,
+                },
+          }),
+        }
+      );
+      const data = await response.json();
+      if (data.error) {
+        const code = data.error.code || response.status;
+        console.error(`Gemini error [${model}] lần ${attempt + 1}:`, code, data.error.status, data.error.message);
+        lastErr = new Error(`${code} ${data.error.status || ""}: ${data.error.message}`);
+        if (![429, 500, 503, 504].includes(code)) throw lastErr; // lỗi cấu hình (key sai, 400...) — không thử lại
+      } else {
+        return data;
+      }
+    } catch (err) {
+      if (err === lastErr) throw err;
+      console.error(`Gemini lỗi mạng/timeout [${model}] lần ${attempt + 1}:`, err.message);
+      lastErr = err;
+    }
+    if (attempt < GEMINI_MODELS.length - 1) await new Promise(r => setTimeout(r, attempt === 0 ? 1500 : 4000));
+  }
+  // Hết lần thử: báo Telegram cho admin (tối đa 1 lần / 10 phút) để biết nguyên nhân thật
+  if (Date.now() - lastGeminiAlertAt > 10 * 60 * 1000) {
+    lastGeminiAlertAt = Date.now();
+    sendTelegramText(`⚠️ Gemini lỗi liên tục, khách nhận tin "hệ thống đang bận". Nguyên nhân: ${String(lastErr?.message || lastErr).slice(0, 300)}`).catch(() => {});
+  }
+  throw lastErr;
+}
+
 async function askGemini(userId, userMessage) {
+  const history = getHistory(userId);
+  const before = history.length;
   addToHistory(userId, "user", userMessage);
-  const systemPrompt = await buildSystemPrompt();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: getHistory(userId),
-      generationConfig: {
-        maxOutputTokens: 1536,
-        temperature: 0.7,
-        // Gemini 2.5 Flash trừ "thinking tokens" (suy luận nội bộ, không hiển thị)
-        // vào chung maxOutputTokens. Đây là nguyên nhân chính khiến câu trả lời bị
-        // cắt cụt giữa chừng dù đã tăng maxOutputTokens — tắt hẳn thinking để dồn
-        // toàn bộ token cho câu trả lời thực tế (tác vụ tư vấn đơn giản, không cần).
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    }),
-  });
-  const data = await response.json();
-  if (data.error) { console.error("Gemini error:", data.error); throw new Error(data.error.message); }
+  let data;
+  try {
+    const systemPrompt = await buildSystemPrompt();
+    data = await callGemini(systemPrompt, getHistory(userId));
+  } catch (err) {
+    // Gọi lỗi: bỏ tin nhắn khách vừa thêm để lịch sử không bị lệch/trùng khi khách nhắn lại
+    const h = getHistory(userId);
+    if (h.length > 0 && h[h.length - 1].role === "user") h.pop();
+    throw err;
+  }
   const candidate = data.candidates?.[0];
   const rawReply = candidate?.content?.parts?.[0]?.text || "Xin lỗi, có lỗi xảy ra. Vui lòng thử lại sau.";
   if (candidate?.finishReason === "MAX_TOKENS") {
-    // Vẫn bị cắt dù đã tắt thinking + tăng token — log rõ để dễ phát hiện nếu tái diễn
     console.warn(`⚠️  [${userId}] Phản hồi Gemini bị cắt do chạm giới hạn MAX_TOKENS.`);
   }
   addToHistory(userId, "model", rawReply);
