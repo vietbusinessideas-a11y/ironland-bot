@@ -532,11 +532,13 @@ async function appendToSheet(lead, fbUserId) {
 
 // ===================== GỌI GEMINI API =====================
 // Gọi Gemini có thử lại: lỗi quá tải/giới hạn (429, 500, 503, 504) hoặc lỗi mạng sẽ tự thử lại
-// tối đa 3 lần (chờ 1.5s, 4s), lần cuối đổi sang model dự phòng gemini-2.5-flash-lite.
-// Dòng 2.5 Google đang "giới hạn truy cập để đảm bảo dung lượng" nên dễ báo bận -> lần 3 dùng
-// model thế hệ mới (3.5 flash-lite). Có thể ghi đè bằng biến môi trường GEMINI_FALLBACK_MODEL.
-const GEMINI_FALLBACK = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash-lite";
-const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash", GEMINI_FALLBACK];
+// tối đa 3 lần (chờ 1.5s, 4s), lần cuối đổi sang model dự phòng.
+// Model chính: gemini-3.8-flash (dòng 2.5 bị Google giới hạn truy cập nên dễ báo bận).
+// Lần thử 1-2 dùng model chính, lần 3 lùi về gemini-2.5-flash. Đổi bằng biến môi trường
+// GEMINI_MODEL / GEMINI_FALLBACK_MODEL trên Render, không cần sửa code.
+const GEMINI_MAIN = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+const GEMINI_FALLBACK = process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash";
+const GEMINI_MODELS = [GEMINI_MAIN, GEMINI_MAIN, GEMINI_FALLBACK];
 let lastGeminiAlertAt = 0;
 async function callGemini(systemPrompt, contents) {
   let lastErr;
